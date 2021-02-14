@@ -1,5 +1,7 @@
 # Gemini Browser
 
+A Gemini Browser written in Go using GTK 3.
+
 ## TODO
 
 - Bookmarks
