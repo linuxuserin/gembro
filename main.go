@@ -38,6 +38,7 @@ func debugURL(surl string) error {
 type App struct {
 	Content        *gtk.Box
 	Spin           *gtk.Spinner
+	label          *gtk.Label
 	Entry          *gtk.Entry
 	bookmarkButton *gtk.Button
 	History        history.History
@@ -126,23 +127,6 @@ func renderLink(surl, name string) string {
 }
 
 func (a *App) renderMeta(meta string, surl string) error {
-	l, err := gtk.LabelNew("")
-	if err != nil {
-		return err
-	}
-	l.SetSelectable(true)
-	l.SetLineWrap(true)
-	l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
-	l.SetHAlign(gtk.ALIGN_START)
-	_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
-		if strings.HasPrefix(url, "gemini://") {
-			a.uiLoadURL(url, true)
-			return true
-		}
-		return false
-	})
-	l.SetMarkup(meta)
-
 	_, _ = glib.IdleAdd(func() {
 		a.Entry.SetText(surl)
 		if surl != "" {
@@ -151,12 +135,28 @@ func (a *App) renderMeta(meta string, surl string) error {
 			a.setBookmarkIcon(false)
 		}
 
-		w := a.Content
-		w.GetChildren().Foreach(func(i interface{}) {
-			w.Remove(i.(gtk.IWidget))
-		})
-		w.Add(l)
-		w.ShowAll()
+		if a.label == nil {
+			l, err := gtk.LabelNew("")
+			if err != nil {
+				log.Print(err)
+				return
+			}
+			l.SetSelectable(true)
+			l.SetLineWrap(true)
+			l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
+			l.SetHAlign(gtk.ALIGN_START)
+			_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
+				if strings.HasPrefix(url, "gemini://") {
+					a.uiLoadURL(url, true)
+					return true
+				}
+				return false
+			})
+			a.label = l
+			a.Content.Add(a.label)
+			a.Content.ShowAll()
+		}
+		a.label.SetMarkup(meta)
 		a.Spin.Stop()
 	})
 	return nil
@@ -193,6 +193,7 @@ func (a *App) uiLoadURLDepth(surl string, addHistory bool, depth int) {
 		var body string
 		resp, err := gemini.LoadURL(*u)
 		if err != nil {
+			log.Print(err)
 			body = "# Could not render the page\n\nThe server did not respond with something worthy"
 			resp = &gemini.Response{Body: body, Header: gemini.Header{Status: 2}, URL: surl}
 		}
@@ -289,6 +290,9 @@ func (a *App) uiLoadURLDepth(surl string, addHistory bool, depth int) {
 				continue
 			}
 			lines[i] = line
+		}
+		if mono {
+			lines = append(lines, "</tt>")
 		}
 
 		err = a.renderMeta(strings.Join(lines, "\n"), a.currentURL)
@@ -460,6 +464,7 @@ func run() error {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net/url"
 	"strings"
 	"unicode"
@@ -17,10 +18,8 @@ type Header struct {
 	Meta                 string
 }
 
-func readHeader(in io.Reader) (*Header, error) {
-	// Header can not be longer than 1024+5 (1024 for meta, 2 for status, 1 for space and 2 for \r\n)
-	rdr := bufio.NewReader(io.LimitReader(in, 1024+5))
-	line, err := rdr.ReadString('\n')
+func readHeader(in *bufio.Reader) (*Header, error) {
+	line, err := in.ReadString('\n')
 	if err != nil {
 		return nil, fmt.Errorf("could not read header: %w", err)
 	}
@@ -37,14 +36,17 @@ func readHeader(in io.Reader) (*Header, error) {
 	}
 	h.StatusDetail = line[1] - '0'
 	h.Meta = strings.TrimSpace(line[2:])
+	if len(h.Meta) > 1024 {
+		return nil, fmt.Errorf("meta too long")
+	}
 	return &h, nil
 }
 
-func readBody(in io.Reader) (string, error) {
+func readBody(in *bufio.Reader) (string, error) {
 	var s strings.Builder
-	rdr := bufio.NewReader(io.LimitReader(in, 1024*1024))
+	// rdr := bufio.NewReader(io.LimitReader(in, 1024*1024))
 	for {
-		line, err := rdr.ReadString('\n')
+		line, err := in.ReadString('\n')
 		if line != "" {
 			s.WriteString(strings.TrimRight(line, "\r"))
 		}
@@ -88,7 +90,8 @@ func LoadURL(surl url.URL) (*Response, error) {
 		return nil, fmt.Errorf("could not send url: %s", err)
 	}
 
-	header, err := readHeader(conn)
+	rdr := bufio.NewReader(io.LimitReader(conn, 1024*1024))
+	header, err := readHeader(rdr)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +101,7 @@ func LoadURL(surl url.URL) (*Response, error) {
 	case 1: // input
 		return resp, nil
 	case 2: // success
-		body, err := readBody(conn)
+		body, err := readBody(rdr)
 		if err != nil {
 			return nil, err
 		}
@@ -124,8 +127,16 @@ func (l *Link) FullURL(parent string) string {
 	if strings.Contains(l.URL, "://") {
 		return l.URL
 	}
-	u, _ := url.Parse(parent)
-	u, _ = u.Parse(l.URL)
+	u, err := url.Parse(parent)
+	if err != nil {
+		log.Print(err)
+		return ""
+	}
+	u, err = u.Parse(l.URL)
+	if err != nil {
+		log.Print(err)
+		return ""
+	}
 	return u.String()
 }
 
