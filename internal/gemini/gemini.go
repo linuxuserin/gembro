@@ -1,4 +1,4 @@
-package main
+package gemini
 
 import (
 	"bufio"
@@ -60,7 +60,7 @@ type Response struct {
 	URL    string
 }
 
-func loadURL(surl url.URL) (*Response, error) {
+func LoadURL(surl url.URL) (*Response, error) {
 	// const host = "gemini.circumlunar.space"
 	// url := fmt.Sprintf("gemini://%s/", host)
 	conn, err := tls.Dial("tcp", surl.Hostname()+":1965", &tls.Config{

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"html"
@@ -10,6 +9,9 @@ import (
 	"net/url"
 	"strings"
 
+	"git.sr.ht/~rafael/gemini-browser/internal/bookmark"
+	"git.sr.ht/~rafael/gemini-browser/internal/gemini"
+	"git.sr.ht/~rafael/gemini-browser/internal/history"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 )
@@ -23,7 +25,7 @@ func debugURL(surl string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := loadURL(*u)
+	resp, err := gemini.LoadURL(*u)
 	if err != nil {
 		return err
 	}
@@ -33,10 +35,21 @@ func debugURL(surl string) error {
 }
 
 type App struct {
-	Content *gtk.Box
-	Spin    *gtk.Spinner
-	Entry   *gtk.Entry
-	History History
+	Content        *gtk.Box
+	Spin           *gtk.Spinner
+	Entry          *gtk.Entry
+	bookmarkButton *gtk.Button
+	History        history.History
+	Bookmarks      *bookmark.BookmarkStore
+	currentURL     string
+}
+
+func (a *App) setBookmarkIcon(has bool) {
+	if has {
+		a.bookmarkButton.SetLabel("★")
+	} else {
+		a.bookmarkButton.SetLabel("☆")
+	}
 }
 
 func (a *App) prompt(title, surl string) {
@@ -78,6 +91,69 @@ func (a *App) prompt(title, surl string) {
 	})
 }
 
+func (a *App) loadHome() {
+	a.Entry.SetText("")
+	a.setBookmarkIcon(false)
+
+	var s strings.Builder
+	s.WriteString(`<span size="xx-large">Bookmarks</span>` + "\n")
+	for _, b := range a.Bookmarks.All() {
+		s.WriteString(renderLink(b.URL, b.Name) + "\n")
+	}
+
+	l, err := a.createMainLabel()
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	l.SetMarkup(s.String())
+
+	w := a.Content
+	w.GetChildren().Foreach(func(i interface{}) {
+		w.Remove(i.(gtk.IWidget))
+	})
+	w.Add(l)
+	w.ShowAll()
+}
+
+var linkTmpl = template.Must(template.New("foo").Parse(`<a href="{{.URL}}" title="{{.URL}}">{{.Name}}</a> ` +
+	`{{if .Type}}({{.Type}}){{end}}`))
+
+func renderLink(surl, name string) string {
+	surl = html.EscapeString(surl)
+	var typ string
+	if !strings.HasPrefix(surl, "gemini://") {
+		typ = strings.Split(surl, "://")[0]
+	}
+	var b strings.Builder
+	if err := linkTmpl.Execute(&b, struct {
+		URL        template.URL
+		Name, Type string
+	}{template.URL(surl), name, typ}); err != nil {
+		log.Print(err)
+		return "Render failure"
+	}
+	return b.String()
+}
+
+func (a *App) createMainLabel() (*gtk.Label, error) {
+	l, err := gtk.LabelNew("")
+	if err != nil {
+		return nil, err
+	}
+	l.SetSelectable(true)
+	l.SetLineWrap(true)
+	l.SetHAlign(gtk.ALIGN_START)
+	_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
+		if strings.HasPrefix(url, "gemini://") {
+			a.uiLoadURL(url, true)
+			return true
+		}
+		return false
+	})
+	return l, nil
+}
+
 func (a *App) uiLoadURL(surl string, addHistory bool) {
 	a.Spin.Start()
 	go func() {
@@ -86,7 +162,7 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 			log.Printf("invalid url: %s", err)
 			return
 		}
-		resp, err := loadURL(*u)
+		resp, err := gemini.LoadURL(*u)
 		if err != nil {
 			log.Print(err)
 			return
@@ -104,35 +180,16 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 		if addHistory {
 			a.History.Add(resp.URL)
 		}
-
-		tmpl := template.Must(template.New("foo").Parse(`<a href="{{.URL}}" title="{{.URL}}">{{.Name}}</a> ` +
-			`{{if .Type}}({{.Type}}){{end}}`))
-		renderLink := func(l *Link) string {
-			var b bytes.Buffer
-			surl := html.EscapeString(l.FullURL(resp.URL))
-			name := l.Name
-			var typ string
-			if !strings.HasPrefix(surl, "gemini://") {
-				typ = strings.Split(surl, "://")[0]
-			}
-			if err := tmpl.Execute(&b, struct {
-				URL        template.URL
-				Name, Type string
-			}{template.URL(surl), name, typ}); err != nil {
-				log.Print(err)
-				return "Render failure"
-			}
-			return b.String()
-		}
+		a.currentURL = resp.URL
 
 		lines := strings.Split(resp.Body, "\n")
 		for i, line := range lines {
 			if strings.HasPrefix(line, "=>") {
-				l, err := ParseLink(line)
+				l, err := gemini.ParseLink(line)
 				if err != nil {
-					l = &Link{"", "Invalid link: " + line}
+					l = &gemini.Link{URL: "", Name: "Invalid link: " + line}
 				}
-				rl := renderLink(l)
+				rl := renderLink(l.FullURL(resp.URL), l.Name)
 				lines[i] = rl
 				continue
 			}
@@ -152,25 +209,16 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 			lines[i] = line
 		}
 
-		l, err := gtk.LabelNew("")
+		l, err := a.createMainLabel()
 		if err != nil {
 			log.Print(err)
 			return
 		}
 		l.SetMarkup(strings.Join(lines, "\n"))
-		l.SetSelectable(true)
-		l.SetLineWrap(true)
-		l.SetHAlign(gtk.ALIGN_START)
-		_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
-			if strings.HasPrefix(url, "gemini://") {
-				a.uiLoadURL(url, true)
-				return true
-			}
-			return false
-		})
 
 		_, _ = glib.IdleAdd(func() {
 			a.Entry.SetText(resp.URL)
+			a.setBookmarkIcon(a.Bookmarks.Contains(a.currentURL))
 
 			w := a.Content
 			w.GetChildren().Foreach(func(i interface{}) {
@@ -192,7 +240,11 @@ func run() error {
 		return debugURL(*durl)
 	}
 
-	app := App{}
+	bs, err := bookmark.Load("bookmarks.json")
+	if err != nil {
+		return err
+	}
+	app := App{Bookmarks: bs}
 
 	gtk.Init(nil)
 	win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
@@ -237,7 +289,7 @@ func run() error {
 
 	//
 	// URL bar
-	back, err := gtk.ButtonNewWithLabel("<-")
+	back, err := gtk.ButtonNewWithLabel("⏴")
 	if err != nil {
 		return err
 	}
@@ -248,7 +300,7 @@ func run() error {
 	})
 	hb.Add(back)
 
-	forward, err := gtk.ButtonNewWithLabel("->")
+	forward, err := gtk.ButtonNewWithLabel("⏵")
 	if err != nil {
 		return err
 	}
@@ -272,16 +324,39 @@ func run() error {
 	e.SetText(*surl)
 	hb.Add(e)
 
-	l, err := gtk.ButtonNew()
+	bookmark, err := gtk.ButtonNewWithLabel("☆")
 	if err != nil {
 		return err
 	}
-	l.SetLabel("Go")
-	_, _ = l.Connect("clicked", func() {
-		s, _ := e.GetText()
-		app.uiLoadURL(s, true)
+	app.bookmarkButton = bookmark
+	_, _ = bookmark.Connect("clicked", func() {
+		if app.currentURL == "" {
+			return
+		}
+		if app.Bookmarks.Contains(app.currentURL) {
+			if err := app.Bookmarks.Remove(app.currentURL); err != nil {
+				log.Panic(err)
+				return
+			}
+			app.setBookmarkIcon(false)
+			return
+		}
+		if err := app.Bookmarks.Add(app.currentURL, app.currentURL); err != nil {
+			log.Panic(err)
+			return
+		}
+		app.setBookmarkIcon(true)
 	})
-	hb.Add(l)
+	hb.Add(bookmark)
+
+	home, err := gtk.ButtonNewWithLabel("⌂")
+	if err != nil {
+		return err
+	}
+	_, _ = home.Connect("clicked", func() {
+		app.loadHome()
+	})
+	hb.Add(home)
 
 	spin, err := gtk.SpinnerNew()
 	if err != nil {
@@ -308,6 +383,8 @@ func run() error {
 				app.uiLoadURL(*surl, true)
 			})
 		}()
+	} else {
+		app.loadHome()
 	}
 
 	gtk.Main()
