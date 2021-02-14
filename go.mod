@@ -1,4 +1,4 @@
-module gemini
+module https: //git.sr.ht/~rafael/gemini-browser
 
 go 1.15
 
