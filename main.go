@@ -12,22 +12,25 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
+	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/muesli/termenv"
 )
 
 type model struct {
-	url       string
-	data      []string
-	textInput textinput.Model
-	viewport  viewport.Model
-	cursor    int              // which to-do list item our cursor is pointing at
-	selected  map[int]struct{} // which to-do items are selected
-	err       error
-	links     []LinkPos
-	startURL  string
-	ready     bool
-	history   *History
+	url        string
+	data       []string
+	textInput  textinput.Model
+	queryInput textinput.Model
+	viewport   viewport.Model
+	cursor     int              // which to-do list item our cursor is pointing at
+	selected   map[int]struct{} // which to-do items are selected
+	err        error
+	links      []LinkPos
+	startURL   string
+	ready      bool
+	history    *History
+	query      string
 }
 
 func (m model) Init() tea.Cmd {
@@ -63,11 +66,20 @@ type LinkPos struct {
 	ypos int
 }
 
+const (
+	headerHeight               = 3
+	footerHeight               = 1
+	useHighPerformanceRenderer = false
+	nindent                    = 4
+)
+
 func parseContent(content []string, cursor int) (string, []LinkPos) {
 	var linkIDX int
 	var s strings.Builder
 	var links []LinkPos
 	var ypos int
+	p := termenv.ColorProfile()
+	s.WriteString("\n\n")
 	for _, line := range content {
 		if strings.HasPrefix(line, "=>") {
 			l, err := ParseLink(line)
@@ -77,11 +89,11 @@ func parseContent(content []string, cursor int) (string, []LinkPos) {
 			links = append(links, LinkPos{l, ypos})
 
 			linkIDX++
+			oline := termenv.String(fmt.Sprintf("> %s (%s)", l.Name, l.URL)).Foreground(p.Color("#0000ff"))
 			if linkIDX == cursor {
-				s.WriteString(termenv.String(fmt.Sprintf("> %s (%s)", l.Name, l.URL)).Reverse().String())
-			} else {
-				s.WriteString(fmt.Sprintf("> %s", l.Name))
+				oline = oline.Reverse()
 			}
+			s.WriteString(oline.String())
 			s.WriteString("\n")
 			ypos++
 			continue
@@ -91,14 +103,8 @@ func parseContent(content []string, cursor int) (string, []LinkPos) {
 		s.WriteString("\n")
 		ypos += strings.Count(sl, "\n") + 1
 	}
-	return s.String(), links
+	return indent.String(s.String(), nindent), links
 }
-
-const (
-	headerHeight               = 3
-	footerHeight               = 1
-	useHighPerformanceRenderer = false
-)
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -147,6 +153,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyEnter:
 			m.err = nil
+			if m.query != "" && m.queryInput.Value() != "" {
+				return m, teaLoadURL(m.textInput.Value()+"?"+m.queryInput.Value(), true)
+			}
 			if m.cursor == 0 {
 				return m, teaLoadURL(m.textInput.Value(), true)
 			}
@@ -195,6 +204,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.data = nil
 		m.links = nil
 		m.cursor = 0
+		m.viewport.SetContent(msg.Error())
 		return m, nil
 	case TeaResponse:
 		m.cursor = 0
@@ -207,6 +217,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.AddHist {
 			m.history.Add(msg.URL)
 		}
+		if msg.Header.Status/10 == 1 {
+			m.query = msg.Header.Meta
+			m.queryInput.Focus()
+		} else {
+			m.query = ""
+		}
 		return m, nil
 	}
 
@@ -217,32 +233,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.textInput, cmd = m.textInput.Update(msg)
 	cmds = append(cmds, cmd)
+	if m.query != "" {
+		m.queryInput, cmd = m.queryInput.Update(msg)
+		cmds = append(cmds, cmd)
+	}
 	return m, tea.Batch(cmds...)
 }
 
 func (m model) View() string {
-	// // p := termenv.ColorProfile()
-	// var s strings.Builder
-
-	// s.WriteString(m.textInput.View())
-	// s.WriteString("\n\n")
-
-	// if m.err != nil {
-	// 	s.WriteString(m.err.Error())
-	// }
-
 	if !m.ready {
 		return "\n  Initalizing..."
 	}
 
-	headerMid := "│ " + m.history.Status() + " ├"
+	headerMid := "│ Gemini ├"
 	headerMid += strings.Repeat("─", m.viewport.Width-runewidth.StringWidth(headerMid))
 
 	footerMid := fmt.Sprintf("┤ %3.f%% │", m.viewport.ScrollPercent()*100)
 	gapSize := m.viewport.Width - runewidth.StringWidth(footerMid)
 	footerMid = strings.Repeat("─", gapSize) + footerMid
 
-	return fmt.Sprintf("%s\n\n%s\n%s\n%s", m.textInput.View(), headerMid, m.viewport.View(), footerMid)
+	inputs := m.textInput.View()
+	if m.query != "" {
+		inputs += fmt.Sprintf(" %s: %s", m.query, m.queryInput.View())
+	}
+
+	return fmt.Sprintf("%s\n\n%s\n%s\n%s", inputs, headerMid, m.viewport.View(), footerMid)
 }
 
 func initialModel(surl string) model {
@@ -251,11 +266,15 @@ func initialModel(surl string) model {
 	i.SetValue(surl)
 	i.Focus()
 
+	qi := textinput.NewModel()
+	qi.Width = 200
+
 	return model{
-		data:      nil,
-		textInput: i,
-		startURL:  surl,
-		history:   &History{},
+		data:       nil,
+		textInput:  i,
+		queryInput: qi,
+		startURL:   surl,
+		history:    &History{},
 
 		// A map which indicates which choices are selected. We're using
 		// the  map like a mathematical set. The keys refer to the indexes
@@ -264,15 +283,34 @@ func initialModel(surl string) model {
 	}
 }
 
+func debugURL(surl string) error {
+	u, err := url.Parse(surl)
+	if err != nil {
+		return err
+	}
+	resp, err := loadURL(*u)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%#v", resp.Header)
+	return nil
+}
+
 func run() error {
 	surl := flag.String("url", "", "URL to start with")
+	durl := flag.String("debug", "", "Debug URL")
 	flag.Parse()
+
+	if *durl != "" {
+		return debugURL(*durl)
+	}
 
 	p := tea.NewProgram(initialModel(*surl))
 	p.EnterAltScreen()
 	defer p.ExitAltScreen()
-	p.EnableMouseCellMotion()
-	defer p.DisableMouseCellMotion()
+	// p.EnableMouseCellMotion()
+	// defer p.DisableMouseCellMotion()
 	if err := p.Start(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)

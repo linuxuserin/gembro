@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -23,12 +24,18 @@ func readHeader(in io.Reader) (*Header, error) {
 		return nil, fmt.Errorf("could not read header: %w", err)
 	}
 	var h Header
-	if _, err := fmt.Sscanf(line, "%d %s\r\n", &h.Status, &h.Meta); err != nil {
-		return nil, fmt.Errorf("could not scan header: %w", err)
+	if len(line) < 2 {
+		return nil, fmt.Errorf("header too short")
 	}
-	if h.Status > 99 {
-		return nil, fmt.Errorf("status too long")
+	val, err := strconv.Atoi(line[:2])
+	if err != nil {
+		return nil, fmt.Errorf("status not an integer: %s", err)
 	}
+	if 10 > val || val > 50 {
+		return nil, fmt.Errorf("invalid status: %d", val)
+	}
+	h.Status = uint(val)
+	h.Meta = strings.TrimSpace(line[2:])
 	return &h, nil
 }
 
@@ -77,21 +84,23 @@ func loadURL(surl url.URL) (*Response, error) {
 		return nil, err
 	}
 
+	resp := &Response{Header: *header, URL: surl.String()}
 	switch header.Status / 10 {
 	case 1: // input
-		return &Response{Header: *header}, nil
+		return resp, nil
 	case 2: // success
 		body, err := readBody(conn)
 		if err != nil {
 			return nil, err
 		}
-		return &Response{Body: body, Header: *header, URL: surl.String()}, nil
+		resp.Body = body
+		return resp, nil
 	case 3: // redirect
-		return &Response{Header: *header}, nil
+		return resp, nil
 	case 4, 5: // temporary/permanent failure
-		return &Response{Header: *header}, nil
+		return resp, nil
 	case 6: // client certificate required
-		return &Response{Header: *header}, nil
+		return resp, nil
 	default:
 		return nil, fmt.Errorf("unknown response status: %d", header.Status)
 	}
