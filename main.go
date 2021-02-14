@@ -54,8 +54,6 @@ func (a *App) setBookmarkIcon(has bool) {
 
 func (a *App) prompt(title, surl string) {
 	_, _ = glib.IdleAdd(func() {
-		defer a.Spin.Stop()
-
 		d, err := gtk.DialogNewWithButtons(title, nil, 0)
 		if err != nil {
 			log.Print(err)
@@ -101,19 +99,9 @@ func (a *App) loadHome() {
 		s.WriteString(renderLink(b.URL, b.Name) + "\n")
 	}
 
-	l, err := a.createMainLabel()
-	if err != nil {
+	if err := a.renderMeta(s.String(), ""); err != nil {
 		log.Print(err)
-		return
 	}
-	l.SetMarkup(s.String())
-
-	w := a.Content
-	w.GetChildren().Foreach(func(i interface{}) {
-		w.Remove(i.(gtk.IWidget))
-	})
-	w.Add(l)
-	w.ShowAll()
 }
 
 var linkTmpl = template.Must(template.New("foo").Parse(`<a href="{{.URL}}" title="{{.URL}}">{{.Name}}</a> ` +
@@ -136,10 +124,16 @@ func renderLink(surl, name string) string {
 	return b.String()
 }
 
-func (a *App) createMainLabel() (*gtk.Label, error) {
+func (a *App) renderError(meta string) {
+	if err := a.renderMeta(meta, ""); err != nil {
+		log.Print(err)
+	}
+}
+
+func (a *App) renderMeta(meta string, surl string) error {
 	l, err := gtk.LabelNew("")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	l.SetSelectable(true)
 	l.SetLineWrap(true)
@@ -151,12 +145,35 @@ func (a *App) createMainLabel() (*gtk.Label, error) {
 		}
 		return false
 	})
-	return l, nil
+	l.SetMarkup(meta)
+
+	_, _ = glib.IdleAdd(func() {
+		a.Entry.SetText(surl)
+		if surl != "" {
+			a.setBookmarkIcon(a.Bookmarks.Contains(a.currentURL))
+		} else {
+			a.setBookmarkIcon(false)
+		}
+
+		w := a.Content
+		w.GetChildren().Foreach(func(i interface{}) {
+			w.Remove(i.(gtk.IWidget))
+		})
+		w.Add(l)
+		w.ShowAll()
+		a.Spin.Stop()
+	})
+	return nil
 }
 
 func (a *App) uiLoadURL(surl string, addHistory bool) {
 	a.Spin.Start()
 	go func() {
+		defer func() {
+			_, _ = glib.IdleAdd(func() {
+				a.Spin.Stop()
+			})
+		}()
 		u, err := url.Parse(surl)
 		if err != nil {
 			log.Printf("invalid url: %s", err)
@@ -182,7 +199,12 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 		}
 		a.currentURL = resp.URL
 
-		lines := strings.Split(resp.Body, "\n")
+		body, err := resp.GetBody()
+		if err != nil {
+			a.renderError(err.Error())
+			return
+		}
+		lines := strings.Split(body, "\n")
 		var mono bool
 		for i, line := range lines {
 			if strings.HasPrefix(line, "```") {
@@ -219,25 +241,10 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 			lines[i] = line
 		}
 
-		l, err := a.createMainLabel()
+		err = a.renderMeta(strings.Join(lines, "\n"), a.currentURL)
 		if err != nil {
 			log.Print(err)
-			return
 		}
-		l.SetMarkup(strings.Join(lines, "\n"))
-
-		_, _ = glib.IdleAdd(func() {
-			a.Entry.SetText(resp.URL)
-			a.setBookmarkIcon(a.Bookmarks.Contains(a.currentURL))
-
-			w := a.Content
-			w.GetChildren().Foreach(func(i interface{}) {
-				w.Remove(i.(gtk.IWidget))
-			})
-			w.Add(l)
-			w.ShowAll()
-			a.Spin.Stop()
-		})
 	}()
 }
 

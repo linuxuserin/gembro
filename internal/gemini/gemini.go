@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"unicode"
+
+	"golang.org/x/net/html/charset"
 )
 
 type Header struct {
@@ -58,6 +60,12 @@ type Response struct {
 	Body   string
 	Header Header
 	URL    string
+}
+
+func (r *Response) GetBody() (string, error) {
+	e, name, _ := charset.DetermineEncoding(nil, r.Header.Meta)
+	fmt.Println(name)
+	return e.NewDecoder().String(r.Body)
 }
 
 func LoadURL(surl url.URL) (*Response, error) {
