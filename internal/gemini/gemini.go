@@ -63,8 +63,10 @@ type Response struct {
 }
 
 func (r *Response) GetBody() (string, error) {
-	e, name, _ := charset.DetermineEncoding(nil, r.Header.Meta)
-	fmt.Println(name)
+	e, _, certain := charset.DetermineEncoding(nil, r.Header.Meta)
+	if !certain {
+		return r.Body, nil
+	}
 	return e.NewDecoder().String(r.Body)
 }
 

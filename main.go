@@ -167,12 +167,27 @@ func (a *App) renderMeta(meta string, surl string) error {
 }
 
 func (a *App) uiLoadURL(surl string, addHistory bool) {
-	a.Spin.Start()
+	a.uiLoadURLDepth(surl, addHistory, 0)
+}
+
+func (a *App) spin(start bool) {
+	_, _ = glib.IdleAdd(func() {
+		if start {
+			a.Spin.Start()
+			return
+		}
+		a.Spin.Stop()
+	})
+}
+
+func (a *App) uiLoadURLDepth(surl string, addHistory bool, depth int) {
+	a.spin(true)
 	go func() {
+		stopSpinning := true
 		defer func() {
-			_, _ = glib.IdleAdd(func() {
-				a.Spin.Stop()
-			})
+			if stopSpinning {
+				a.spin(false)
+			}
 		}()
 		u, err := url.Parse(surl)
 		if err != nil {
@@ -190,8 +205,39 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 			return
 		case 2:
 			// Continue normally
+		case 3: // Redirect
+			if depth < 5 {
+				stopSpinning = false
+
+				// Get URL to redirect to
+				// It might be relative so use current url
+				u, err := url.Parse(surl)
+				if err != nil {
+					return
+				}
+				u, err = u.Parse(resp.Header.Meta)
+				if err != nil {
+					return
+				}
+
+				if u.Scheme == "gemini" {
+					a.uiLoadURLDepth(u.String(), addHistory, depth+1)
+					return
+				}
+
+				resp.Body = fmt.Sprintf(
+					`# Wrong scheme`+
+						"\n\nThe page tried to redirect to a non-gemini URL.\n\nGo there anyway:\n=> %s",
+					resp.Header.Meta)
+			} else {
+				resp.Body = fmt.Sprintf(
+					`# 👹 Welcome to the Web From Hell 👹`+
+						"\n\nThe page redirected more than 5 times.\n\nRedirect (up to) 5 more times:\n=> %s",
+					resp.Header.Meta)
+			}
 		default:
-			log.Printf("Unknown response: %#v", resp)
+			a.renderError(fmt.Sprintf("Unknown response with code %d and meta %q",
+				resp.Header.Status, resp.Header.Meta))
 			return
 		}
 		if addHistory {
