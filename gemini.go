@@ -6,14 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"strconv"
 	"strings"
 	"unicode"
 )
 
 type Header struct {
-	Status uint
-	Meta   string
+	Status, StatusDetail uint8
+	Meta                 string
 }
 
 func readHeader(in io.Reader) (*Header, error) {
@@ -27,14 +26,12 @@ func readHeader(in io.Reader) (*Header, error) {
 	if len(line) < 2 {
 		return nil, fmt.Errorf("header too short")
 	}
-	val, err := strconv.Atoi(line[:2])
-	if err != nil {
-		return nil, fmt.Errorf("status not an integer: %s", err)
+	if '1' <= line[0] && line[0] <= '6' {
+		h.Status = line[0] - '0'
 	}
-	if 10 > val || val > 50 {
-		return nil, fmt.Errorf("invalid status: %d", val)
+	if '0' <= line[1] && line[1] <= '9' {
+		h.StatusDetail = line[1] - '0'
 	}
-	h.Status = uint(val)
 	h.Meta = strings.TrimSpace(line[2:])
 	return &h, nil
 }
@@ -85,7 +82,7 @@ func loadURL(surl url.URL) (*Response, error) {
 	}
 
 	resp := &Response{Header: *header, URL: surl.String()}
-	switch header.Status / 10 {
+	switch header.Status {
 	case 1: // input
 		return resp, nil
 	case 2: // success

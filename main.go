@@ -91,7 +91,7 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 			log.Print(err)
 			return
 		}
-		switch resp.Header.Status / 10 {
+		switch resp.Header.Status {
 		case 1:
 			a.prompt(resp.Header.Meta, surl)
 			return
