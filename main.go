@@ -125,12 +125,6 @@ func renderLink(surl, name string) string {
 	return b.String()
 }
 
-func (a *App) renderError(meta string) {
-	if err := a.renderMeta(meta, ""); err != nil {
-		log.Print(err)
-	}
-}
-
 func (a *App) renderMeta(meta string, surl string) error {
 	l, err := gtk.LabelNew("")
 	if err != nil {
