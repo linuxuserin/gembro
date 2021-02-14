@@ -39,6 +39,45 @@ type App struct {
 	History History
 }
 
+func (a *App) prompt(title, surl string) {
+	_, _ = glib.IdleAdd(func() {
+		defer a.Spin.Stop()
+
+		d, err := gtk.DialogNewWithButtons(title, nil, 0)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+		inp, err := gtk.EntryNew()
+		if err != nil {
+			log.Print(err)
+			return
+		}
+		d.AddActionWidget(inp, gtk.RESPONSE_ACCEPT)
+		if _, err := d.AddButton("OK", gtk.RESPONSE_ACCEPT); err != nil {
+			log.Print(err)
+			return
+		}
+
+		_, _ = d.Connect("response", func(_ *gtk.Dialog, r gtk.ResponseType) {
+			defer d.Destroy()
+			switch r {
+			case gtk.RESPONSE_ACCEPT:
+				s, err := inp.GetText()
+				if err != nil {
+					log.Print(err)
+					return
+				}
+				s = strings.TrimSpace(s)
+				if s != "" {
+					a.uiLoadURL(fmt.Sprintf("%s?%s", surl, url.QueryEscape(s)), true)
+				}
+			}
+		})
+		d.ShowAll()
+	})
+}
+
 func (a *App) uiLoadURL(surl string, addHistory bool) {
 	a.Spin.Start()
 	go func() {
@@ -50,6 +89,16 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 		resp, err := loadURL(*u)
 		if err != nil {
 			log.Print(err)
+			return
+		}
+		switch resp.Header.Status / 10 {
+		case 1:
+			a.prompt(resp.Header.Meta, surl)
+			return
+		case 2:
+			// Continue normally
+		default:
+			log.Printf("Unknown response: %#v", resp)
 			return
 		}
 		if addHistory {
