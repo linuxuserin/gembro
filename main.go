@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"html"
 	"html/template"
 	"log"
 	"net/url"
@@ -55,10 +56,11 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 			a.History.Add(resp.URL)
 		}
 
-		tmpl := template.Must(template.New("foo").Parse(`<a href="{{.URL}}" title="{{.URL}}">{{.Name}}</a> {{if .Type}}({{.Type}}){{end}}`))
+		tmpl := template.Must(template.New("foo").Parse(`<a href="{{.URL}}" title="{{.URL}}">{{.Name}}</a> ` +
+			`{{if .Type}}({{.Type}}){{end}}`))
 		renderLink := func(l *Link) string {
 			var b bytes.Buffer
-			surl := l.FullURL(resp.URL)
+			surl := html.EscapeString(l.FullURL(resp.URL))
 			name := l.Name
 			var typ string
 			if !strings.HasPrefix(surl, "gemini://") {
@@ -76,7 +78,6 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 
 		lines := strings.Split(resp.Body, "\n")
 		for i, line := range lines {
-			lines[i] = template.HTMLEscapeString(line)
 			if strings.HasPrefix(line, "=>") {
 				l, err := ParseLink(line)
 				if err != nil {
@@ -84,7 +85,22 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 				}
 				rl := renderLink(l)
 				lines[i] = rl
+				continue
 			}
+			line = template.HTMLEscapeString(line)
+			if strings.HasPrefix(line, "# ") {
+				lines[i] = fmt.Sprintf(`<span size="xx-large">%s</span>`, line[2:])
+				continue
+			}
+			if strings.HasPrefix(line, "## ") {
+				lines[i] = fmt.Sprintf(`<span size="x-large">%s</span>`, line[3:])
+				continue
+			}
+			if strings.HasPrefix(line, "### ") {
+				lines[i] = fmt.Sprintf(`<span size="large">%s</span>`, line[4:])
+				continue
+			}
+			lines[i] = line
 		}
 
 		l, err := gtk.LabelNew("")
