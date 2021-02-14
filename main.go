@@ -14,6 +14,7 @@ import (
 	"git.sr.ht/~rafael/gemini-browser/internal/history"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
+	"github.com/gotk3/gotk3/pango"
 )
 
 const (
@@ -137,6 +138,7 @@ func (a *App) renderMeta(meta string, surl string) error {
 	}
 	l.SetSelectable(true)
 	l.SetLineWrap(true)
+	l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
 	l.SetHAlign(gtk.ALIGN_START)
 	_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
 		if strings.HasPrefix(url, "gemini://") {
