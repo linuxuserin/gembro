@@ -13,6 +13,10 @@ import (
 	"github.com/gotk3/gotk3/gtk"
 )
 
+const (
+	appTitle = "Gemini Browser"
+)
+
 func debugURL(surl string) error {
 	u, err := url.Parse(surl)
 	if err != nil {
@@ -30,9 +34,11 @@ func debugURL(surl string) error {
 type App struct {
 	Content *gtk.Box
 	Spin    *gtk.Spinner
+	Entry   *gtk.Entry
+	History History
 }
 
-func (a *App) uiLoadURL(surl string) {
+func (a *App) uiLoadURL(surl string, addHistory bool) {
 	a.Spin.Start()
 	go func() {
 		u, err := url.Parse(surl)
@@ -45,14 +51,23 @@ func (a *App) uiLoadURL(surl string) {
 			log.Print(err)
 			return
 		}
+		if addHistory {
+			a.History.Add(resp.URL)
+		}
 
-		tmpl := template.Must(template.New("foo").Parse(`<a href="{{.URL}}" title="{{.URL}}">{{.Name}}</a>`))
+		tmpl := template.Must(template.New("foo").Parse(`<a href="{{.URL}}" title="{{.URL}}">{{.Name}}</a> {{if .Type}}({{.Type}}){{end}}`))
 		renderLink := func(l *Link) string {
 			var b bytes.Buffer
+			surl := l.FullURL(resp.URL)
+			name := l.Name
+			var typ string
+			if !strings.HasPrefix(surl, "gemini://") {
+				typ = strings.Split(surl, "://")[0]
+			}
 			if err := tmpl.Execute(&b, struct {
-				URL  template.URL
-				Name string
-			}{template.URL(l.FullURL(resp.URL)), l.Name}); err != nil {
+				URL        template.URL
+				Name, Type string
+			}{template.URL(surl), name, typ}); err != nil {
 				log.Print(err)
 				return "Render failure"
 			}
@@ -61,6 +76,7 @@ func (a *App) uiLoadURL(surl string) {
 
 		lines := strings.Split(resp.Body, "\n")
 		for i, line := range lines {
+			lines[i] = template.HTMLEscapeString(line)
 			if strings.HasPrefix(line, "=>") {
 				l, err := ParseLink(line)
 				if err != nil {
@@ -82,13 +98,15 @@ func (a *App) uiLoadURL(surl string) {
 		l.SetHAlign(gtk.ALIGN_START)
 		_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
 			if strings.HasPrefix(url, "gemini://") {
-				a.uiLoadURL(url)
+				a.uiLoadURL(url, true)
 				return true
 			}
 			return false
 		})
 
 		_, _ = glib.IdleAdd(func() {
+			a.Entry.SetText(resp.URL)
+
 			w := a.Content
 			w.GetChildren().Foreach(func(i interface{}) {
 				w.Remove(i.(gtk.IWidget))
@@ -116,7 +134,7 @@ func run() error {
 	if err != nil {
 		log.Fatal("Unable to create window:", err)
 	}
-	win.SetTitle("Simple Example")
+	win.SetTitle(appTitle)
 	_, _ = win.Connect("destroy", func() {
 		gtk.MainQuit()
 	})
@@ -131,21 +149,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	hb.SetMarginTop(5)
+	hb.SetMarginBottom(5)
+	hb.SetMarginStart(10)
+	hb.SetMarginEnd(10)
 	b.Add(hb)
-
-	e, err := gtk.EntryNew()
-	if err != nil {
-		return err
-	}
-	e.SetHExpand(true)
-	e.SetText(*surl)
-	hb.Add(e)
-
-	f, err := gtk.ScrolledWindowNew(nil, nil)
-	if err != nil {
-		return err
-	}
-	f.SetVExpand(true)
 
 	cb, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 0)
 	if err != nil {
@@ -154,7 +162,50 @@ func run() error {
 	app.Content = cb
 	cb.SetMarginStart(10)
 	cb.SetMarginEnd(10)
+
+	f, err := gtk.ScrolledWindowNew(nil, nil)
+	if err != nil {
+		return err
+	}
+	f.SetVExpand(true)
 	f.Add(cb)
+
+	//
+	// URL bar
+	back, err := gtk.ButtonNewWithLabel("<-")
+	if err != nil {
+		return err
+	}
+	_, _ = back.Connect("clicked", func() {
+		if surl, ok := app.History.Back(); ok {
+			app.uiLoadURL(surl, false)
+		}
+	})
+	hb.Add(back)
+
+	forward, err := gtk.ButtonNewWithLabel("->")
+	if err != nil {
+		return err
+	}
+	_, _ = forward.Connect("clicked", func() {
+		if surl, ok := app.History.Forward(); ok {
+			app.uiLoadURL(surl, false)
+		}
+	})
+	hb.Add(forward)
+
+	e, err := gtk.EntryNew()
+	if err != nil {
+		return err
+	}
+	app.Entry = e
+	_, _ = e.Connect("activate", func() {
+		s, _ := e.GetText()
+		app.uiLoadURL(s, true)
+	})
+	e.SetHExpand(true)
+	e.SetText(*surl)
+	hb.Add(e)
 
 	l, err := gtk.ButtonNew()
 	if err != nil {
@@ -163,7 +214,7 @@ func run() error {
 	l.SetLabel("Go")
 	_, _ = l.Connect("clicked", func() {
 		s, _ := e.GetText()
-		app.uiLoadURL(s)
+		app.uiLoadURL(s, true)
 	})
 	hb.Add(l)
 
@@ -173,6 +224,9 @@ func run() error {
 	}
 	app.Spin = spin
 	hb.Add(spin)
+
+	// End URL bar
+	//
 
 	b.Add(f)
 
@@ -186,7 +240,7 @@ func run() error {
 	if *surl != "" {
 		go func() {
 			_, _ = glib.IdleAdd(func() {
-				app.uiLoadURL(*surl)
+				app.uiLoadURL(*surl, true)
 			})
 		}()
 	}
