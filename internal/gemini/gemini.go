@@ -44,7 +44,6 @@ func readHeader(in *bufio.Reader) (*Header, error) {
 
 func readBody(in *bufio.Reader) (string, error) {
 	var s strings.Builder
-	// rdr := bufio.NewReader(io.LimitReader(in, 1024*1024))
 	for {
 		line, err := in.ReadString('\n')
 		if line != "" {
@@ -75,8 +74,6 @@ func (r *Response) GetBody() (string, error) {
 }
 
 func LoadURL(surl url.URL) (*Response, error) {
-	// const host = "gemini.circumlunar.space"
-	// url := fmt.Sprintf("gemini://%s/", host)
 	conn, err := tls.Dial("tcp", surl.Hostname()+":1965", &tls.Config{
 		InsecureSkipVerify: true,
 	})
@@ -106,12 +103,6 @@ func LoadURL(surl url.URL) (*Response, error) {
 			return nil, err
 		}
 		resp.Body = body
-		return resp, nil
-	case 3: // redirect
-		return resp, nil
-	case 4, 5: // temporary/permanent failure
-		return resp, nil
-	case 6: // client certificate required
 		return resp, nil
 	default:
 		return resp, nil
