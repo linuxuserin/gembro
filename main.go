@@ -194,17 +194,22 @@ func (a *App) uiLoadURLDepth(surl string, addHistory bool, depth int) {
 			log.Printf("invalid url: %s", err)
 			return
 		}
+		var body string
 		resp, err := gemini.LoadURL(*u)
 		if err != nil {
-			log.Print(err)
-			return
+			body = "# Could not render the page\n\nThe server did not respond with something worthy"
+			resp = &gemini.Response{Body: body, Header: gemini.Header{Status: 2}, URL: surl}
 		}
 		switch resp.Header.Status {
 		case 1:
 			a.prompt(resp.Header.Meta, surl)
 			return
 		case 2:
-			// Continue normally
+			body, err = resp.GetBody()
+			if err != nil {
+				log.Print(err)
+				body = "# Error rendering content\n\nSorry :-("
+			}
 		case 3: // Redirect
 			if depth < 5 {
 				stopSpinning = false
@@ -225,31 +230,34 @@ func (a *App) uiLoadURLDepth(surl string, addHistory bool, depth int) {
 					return
 				}
 
-				resp.Body = fmt.Sprintf(
+				body = fmt.Sprintf(
 					`# Wrong scheme`+
 						"\n\nThe page tried to redirect to a non-gemini URL.\n\nGo there anyway:\n=> %s",
 					resp.Header.Meta)
 			} else {
-				resp.Body = fmt.Sprintf(
+				body = fmt.Sprintf(
 					`# 👹 Welcome to the Web From Hell 👹`+
 						"\n\nThe page redirected more than 5 times.\n\nRedirect (up to) 5 more times:\n=> %s",
 					resp.Header.Meta)
 			}
+		case 4:
+			body = fmt.Sprintf("# Temporary failure \n\nMessage: %s", resp.Header.Meta)
+		case 5:
+			if resp.Header.StatusDetail == 1 {
+				body = "# Page not found\n\nThis page does not exist 🤷"
+			} else {
+				body = fmt.Sprintf("# Permanent failure \n\nMessage: %s", resp.Header.Meta)
+			}
+		case 6:
+			body = fmt.Sprintf("# Client certificate required \n\nBecause: %s", resp.Header.Meta)
 		default:
-			a.renderError(fmt.Sprintf("Unknown response with code %d and meta %q",
-				resp.Header.Status, resp.Header.Meta))
-			return
+			body = "# Unexpected response\n\nNot much that I can do with this, human"
 		}
 		if addHistory {
 			a.History.Add(resp.URL)
 		}
 		a.currentURL = resp.URL
 
-		body, err := resp.GetBody()
-		if err != nil {
-			a.renderError(err.Error())
-			return
-		}
 		lines := strings.Split(body, "\n")
 		var mono bool
 		for i, line := range lines {

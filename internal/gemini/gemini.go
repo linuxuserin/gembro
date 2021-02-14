@@ -28,12 +28,14 @@ func readHeader(in io.Reader) (*Header, error) {
 	if len(line) < 2 {
 		return nil, fmt.Errorf("header too short")
 	}
-	if '1' <= line[0] && line[0] <= '6' {
-		h.Status = line[0] - '0'
+	if '1' > line[0] || line[0] > '6' {
+		return nil, fmt.Errorf("malformed header")
 	}
-	if '0' <= line[1] && line[1] <= '9' {
-		h.StatusDetail = line[1] - '0'
+	h.Status = line[0] - '0'
+	if '0' > line[1] || line[1] > '9' {
+		return nil, fmt.Errorf("malformed header")
 	}
+	h.StatusDetail = line[1] - '0'
 	h.Meta = strings.TrimSpace(line[2:])
 	return &h, nil
 }
@@ -109,7 +111,7 @@ func LoadURL(surl url.URL) (*Response, error) {
 	case 6: // client certificate required
 		return resp, nil
 	default:
-		return nil, fmt.Errorf("unknown response status: %d", header.Status)
+		return resp, nil
 	}
 }
 
