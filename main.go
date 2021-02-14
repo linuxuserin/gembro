@@ -183,8 +183,18 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 		a.currentURL = resp.URL
 
 		lines := strings.Split(resp.Body, "\n")
+		var mono bool
 		for i, line := range lines {
-			if strings.HasPrefix(line, "=>") {
+			if strings.HasPrefix(line, "```") {
+				mono = !mono
+				if mono {
+					lines[i] = `<tt>`
+				} else {
+					lines[i] = `</tt>`
+				}
+				continue
+			}
+			if !mono && strings.HasPrefix(line, "=>") {
 				l, err := gemini.ParseLink(line)
 				if err != nil {
 					l = &gemini.Link{URL: "", Name: "Invalid link: " + line}
@@ -194,15 +204,15 @@ func (a *App) uiLoadURL(surl string, addHistory bool) {
 				continue
 			}
 			line = template.HTMLEscapeString(line)
-			if strings.HasPrefix(line, "# ") {
+			if !mono && strings.HasPrefix(line, "# ") {
 				lines[i] = fmt.Sprintf(`<span size="xx-large">%s</span>`, line[2:])
 				continue
 			}
-			if strings.HasPrefix(line, "## ") {
+			if !mono && strings.HasPrefix(line, "## ") {
 				lines[i] = fmt.Sprintf(`<span size="x-large">%s</span>`, line[3:])
 				continue
 			}
-			if strings.HasPrefix(line, "### ") {
+			if !mono && strings.HasPrefix(line, "### ") {
 				lines[i] = fmt.Sprintf(`<span size="large">%s</span>`, line[4:])
 				continue
 			}
