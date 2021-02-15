@@ -14,7 +14,6 @@ import (
 	"git.sr.ht/~rafael/gemini-browser/internal/history"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
-	"github.com/gotk3/gotk3/pango"
 )
 
 const (
@@ -37,7 +36,6 @@ func debugURL(surl string) error {
 }
 
 type App struct {
-	Content        *gtk.Box
 	Spin           *gtk.Spinner
 	label          *gtk.Label
 	Entry          *gtk.Entry
@@ -55,7 +53,7 @@ func (a *App) setBookmarkIcon(has bool) {
 	}
 }
 
-func (a *App) prompt(title, surl string) {
+func (a *App) promptQuery(title, surl string) {
 	_, _ = glib.IdleAdd(func() {
 		d, err := gtk.DialogNewWithButtons(title, nil, 0)
 		if err != nil {
@@ -84,7 +82,7 @@ func (a *App) prompt(title, surl string) {
 				}
 				s = strings.TrimSpace(s)
 				if s != "" {
-					a.uiGotoURL(fmt.Sprintf("%s?%s", surl, url.QueryEscape(s)), true)
+					a.gotoURL(fmt.Sprintf("%s?%s", surl, url.QueryEscape(s)), true)
 				}
 			}
 		})
@@ -121,7 +119,7 @@ func renderLink(surl, name string) string {
 	return b.String()
 }
 
-func (a *App) renderMeta(meta string, surl string) error {
+func (a *App) renderMeta(meta string, surl string) {
 	_, _ = glib.IdleAdd(func() {
 		a.Entry.SetText(surl)
 		if surl != "" {
@@ -129,32 +127,9 @@ func (a *App) renderMeta(meta string, surl string) error {
 		} else {
 			a.setBookmarkIcon(false)
 		}
-
-		if a.label == nil {
-			l, err := gtk.LabelNew("")
-			if err != nil {
-				log.Print(err)
-				return
-			}
-			l.SetSelectable(true)
-			l.SetLineWrap(true)
-			l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
-			l.SetHAlign(gtk.ALIGN_START)
-			_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
-				if strings.HasPrefix(url, "gemini://") {
-					a.uiGotoURL(url, true)
-					return true
-				}
-				return false
-			})
-			a.label = l
-			a.Content.Add(a.label)
-			a.Content.ShowAll()
-		}
 		a.label.SetMarkup(meta)
 		a.Spin.Stop()
 	})
-	return nil
 }
 
 func (a *App) spin(start bool) {
@@ -167,7 +142,7 @@ func (a *App) spin(start bool) {
 	})
 }
 
-func (a *App) uiLoadURL(surl string) (*gemini.Response, error) {
+func (a *App) loadURL(surl string) (*gemini.Response, error) {
 	switch surl {
 	case homeURL:
 		var r gemini.Response
@@ -184,11 +159,11 @@ func (a *App) uiLoadURL(surl string) (*gemini.Response, error) {
 	}
 }
 
-func (a *App) uiGotoURL(surl string, addHistory bool) {
-	a.uiGotoURLDepth(surl, addHistory, 0)
+func (a *App) gotoURL(surl string, addHistory bool) {
+	a.gotoURLDepth(surl, addHistory, 0)
 }
 
-func (a *App) uiGotoURLDepth(surl string, addHistory bool, depth int) {
+func (a *App) gotoURLDepth(surl string, addHistory bool, depth int) {
 	a.spin(true)
 	go func() {
 		stopSpinning := true
@@ -198,7 +173,7 @@ func (a *App) uiGotoURLDepth(surl string, addHistory bool, depth int) {
 			}
 		}()
 		var body string
-		resp, err := a.uiLoadURL(surl)
+		resp, err := a.loadURL(surl)
 		if err != nil {
 			log.Print(err)
 			body = "# Could not render the page\n\nThe server did not respond with something worthy"
@@ -206,7 +181,7 @@ func (a *App) uiGotoURLDepth(surl string, addHistory bool, depth int) {
 		}
 		switch resp.Header.Status {
 		case 1:
-			a.prompt(resp.Header.Meta, surl)
+			a.promptQuery(resp.Header.Meta, surl)
 			return
 		case 2:
 			body, err = resp.GetBody()
@@ -230,7 +205,7 @@ func (a *App) uiGotoURLDepth(surl string, addHistory bool, depth int) {
 				}
 
 				if u.Scheme == "gemini" {
-					a.uiGotoURLDepth(u.String(), addHistory, depth+1)
+					a.gotoURLDepth(u.String(), addHistory, depth+1)
 					return
 				}
 
@@ -302,14 +277,13 @@ func (a *App) uiGotoURLDepth(surl string, addHistory bool, depth int) {
 			lines = append(lines, "</tt>")
 		}
 
-		err = a.renderMeta(strings.Join(lines, "\n"), a.currentURL)
-		if err != nil {
-			log.Print(err)
-		}
+		a.renderMeta(strings.Join(lines, "\n"), a.currentURL)
 	}()
 }
 
 func run() error {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	surl := flag.String("url", "", "URL to start with")
 	durl := flag.String("debug", "", "Debug URL")
 	flag.Parse()
@@ -322,156 +296,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
 	app := App{Bookmarks: bs}
-
-	gtk.Init(nil)
-	win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
-	if err != nil {
-		log.Fatal("Unable to create window:", err)
-	}
-	win.SetTitle(appTitle)
-	_, _ = win.Connect("destroy", func() {
-		gtk.MainQuit()
-	})
-
-	b, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 10)
-	if err != nil {
-		return err
-	}
-	win.Add(b)
-
-	hb, err := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 10)
-	if err != nil {
-		return err
-	}
-	hb.SetMarginTop(5)
-	hb.SetMarginBottom(5)
-	hb.SetMarginStart(10)
-	hb.SetMarginEnd(10)
-	b.Add(hb)
-
-	cb, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 0)
-	if err != nil {
-		return err
-	}
-	app.Content = cb
-	cb.SetMarginStart(10)
-	cb.SetMarginEnd(10)
-
-	f, err := gtk.ScrolledWindowNew(nil, nil)
-	if err != nil {
-		return err
-	}
-	f.SetVExpand(true)
-	f.Add(cb)
-
-	//
-	// URL bar
-	back, err := gtk.ButtonNewWithLabel("⏴")
-	if err != nil {
-		return err
-	}
-	_, _ = back.Connect("clicked", func() {
-		if surl, ok := app.History.Back(); ok {
-			app.uiGotoURL(surl, false)
-		}
-	})
-	hb.Add(back)
-
-	forward, err := gtk.ButtonNewWithLabel("⏵")
-	if err != nil {
-		return err
-	}
-	_, _ = forward.Connect("clicked", func() {
-		if surl, ok := app.History.Forward(); ok {
-			app.uiGotoURL(surl, false)
-		}
-	})
-	hb.Add(forward)
-
-	e, err := gtk.EntryNew()
-	if err != nil {
-		return err
-	}
-	app.Entry = e
-	_, _ = e.Connect("activate", func() {
-		s, _ := e.GetText()
-		app.uiGotoURL(s, true)
-	})
-	e.SetHExpand(true)
-	e.SetText(*surl)
-	hb.Add(e)
-
-	bookmark, err := gtk.ButtonNewWithLabel("☆")
-	if err != nil {
-		return err
-	}
-	app.bookmarkButton = bookmark
-	_, _ = bookmark.Connect("clicked", func() {
-		if app.currentURL == "" {
-			return
-		}
-		if app.Bookmarks.Contains(app.currentURL) {
-			if err := app.Bookmarks.Remove(app.currentURL); err != nil {
-				log.Panic(err)
-				return
-			}
-			app.setBookmarkIcon(false)
-			return
-		}
-		if err := app.Bookmarks.Add(app.currentURL, app.currentURL); err != nil {
-			log.Panic(err)
-			return
-		}
-		app.setBookmarkIcon(true)
-	})
-	hb.Add(bookmark)
-
-	home, err := gtk.ButtonNewWithLabel("⌂")
-	if err != nil {
-		return err
-	}
-	_, _ = home.Connect("clicked", func() {
-		app.uiGotoURL(homeURL, true)
-	})
-	hb.Add(home)
-
-	spin, err := gtk.SpinnerNew()
-	if err != nil {
-		return err
-	}
-	app.Spin = spin
-	hb.Add(spin)
-
-	// End URL bar
-	//
-
-	b.Add(f)
-
-	// Set the default window size.
-	win.SetDefaultSize(800, 600)
-	win.SetPosition(gtk.WIN_POS_CENTER)
-
-	// Recursively show all widgets contained in this window.
-	win.ShowAll()
-
-	if *surl != "" {
-		go func() {
-			_, _ = glib.IdleAdd(func() {
-				app.uiGotoURL(*surl, true)
-			})
-		}()
-	} else {
-		app.uiGotoURL(homeURL, true)
-	}
-
-	gtk.Main()
-
-	return nil
+	return app.loadMainUI(*surl)
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
