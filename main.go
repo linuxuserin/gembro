@@ -19,6 +19,7 @@ import (
 
 const (
 	appTitle = "Gemini Browser"
+	homeURL  = "home://"
 )
 
 func debugURL(surl string) error {
@@ -83,7 +84,7 @@ func (a *App) prompt(title, surl string) {
 				}
 				s = strings.TrimSpace(s)
 				if s != "" {
-					a.uiLoadURL(fmt.Sprintf("%s?%s", surl, url.QueryEscape(s)), true)
+					a.uiGotoURL(fmt.Sprintf("%s?%s", surl, url.QueryEscape(s)), true)
 				}
 			}
 		})
@@ -91,19 +92,13 @@ func (a *App) prompt(title, surl string) {
 	})
 }
 
-func (a *App) loadHome() {
-	a.Entry.SetText("")
-	a.setBookmarkIcon(false)
-
+func (a *App) homeMeta() string {
 	var s strings.Builder
-	s.WriteString(`<span size="xx-large">Bookmarks</span>` + "\n")
+	s.WriteString("# Bookmarks\n\n")
 	for _, b := range a.Bookmarks.All() {
-		s.WriteString(renderLink(b.URL, b.Name) + "\n")
+		s.WriteString(fmt.Sprintf("=> %s %s\n", b.URL, b.Name))
 	}
-
-	if err := a.renderMeta(s.String(), ""); err != nil {
-		log.Print(err)
-	}
+	return s.String()
 }
 
 var linkTmpl = template.Must(template.New("foo").Parse(`<a href="{{.URL}}" title="{{.URL}}">{{.Name}}</a> ` +
@@ -147,7 +142,7 @@ func (a *App) renderMeta(meta string, surl string) error {
 			l.SetHAlign(gtk.ALIGN_START)
 			_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
 				if strings.HasPrefix(url, "gemini://") {
-					a.uiLoadURL(url, true)
+					a.uiGotoURL(url, true)
 					return true
 				}
 				return false
@@ -162,10 +157,6 @@ func (a *App) renderMeta(meta string, surl string) error {
 	return nil
 }
 
-func (a *App) uiLoadURL(surl string, addHistory bool) {
-	a.uiLoadURLDepth(surl, addHistory, 0)
-}
-
 func (a *App) spin(start bool) {
 	_, _ = glib.IdleAdd(func() {
 		if start {
@@ -176,7 +167,28 @@ func (a *App) spin(start bool) {
 	})
 }
 
-func (a *App) uiLoadURLDepth(surl string, addHistory bool, depth int) {
+func (a *App) uiLoadURL(surl string) (*gemini.Response, error) {
+	switch surl {
+	case homeURL:
+		var r gemini.Response
+		r.Body = a.homeMeta()
+		r.Header.Status = 2
+		r.URL = surl
+		return &r, nil
+	default:
+		u, err := url.Parse(surl)
+		if err != nil {
+			return nil, fmt.Errorf("invalid url: %s", err)
+		}
+		return gemini.LoadURL(*u)
+	}
+}
+
+func (a *App) uiGotoURL(surl string, addHistory bool) {
+	a.uiGotoURLDepth(surl, addHistory, 0)
+}
+
+func (a *App) uiGotoURLDepth(surl string, addHistory bool, depth int) {
 	a.spin(true)
 	go func() {
 		stopSpinning := true
@@ -185,13 +197,8 @@ func (a *App) uiLoadURLDepth(surl string, addHistory bool, depth int) {
 				a.spin(false)
 			}
 		}()
-		u, err := url.Parse(surl)
-		if err != nil {
-			log.Printf("invalid url: %s", err)
-			return
-		}
 		var body string
-		resp, err := gemini.LoadURL(*u)
+		resp, err := a.uiLoadURL(surl)
 		if err != nil {
 			log.Print(err)
 			body = "# Could not render the page\n\nThe server did not respond with something worthy"
@@ -223,7 +230,7 @@ func (a *App) uiLoadURLDepth(surl string, addHistory bool, depth int) {
 				}
 
 				if u.Scheme == "gemini" {
-					a.uiLoadURLDepth(u.String(), addHistory, depth+1)
+					a.uiGotoURLDepth(u.String(), addHistory, depth+1)
 					return
 				}
 
@@ -366,7 +373,7 @@ func run() error {
 	}
 	_, _ = back.Connect("clicked", func() {
 		if surl, ok := app.History.Back(); ok {
-			app.uiLoadURL(surl, false)
+			app.uiGotoURL(surl, false)
 		}
 	})
 	hb.Add(back)
@@ -377,7 +384,7 @@ func run() error {
 	}
 	_, _ = forward.Connect("clicked", func() {
 		if surl, ok := app.History.Forward(); ok {
-			app.uiLoadURL(surl, false)
+			app.uiGotoURL(surl, false)
 		}
 	})
 	hb.Add(forward)
@@ -389,7 +396,7 @@ func run() error {
 	app.Entry = e
 	_, _ = e.Connect("activate", func() {
 		s, _ := e.GetText()
-		app.uiLoadURL(s, true)
+		app.uiGotoURL(s, true)
 	})
 	e.SetHExpand(true)
 	e.SetText(*surl)
@@ -425,7 +432,7 @@ func run() error {
 		return err
 	}
 	_, _ = home.Connect("clicked", func() {
-		app.loadHome()
+		app.uiGotoURL(homeURL, true)
 	})
 	hb.Add(home)
 
@@ -451,11 +458,11 @@ func run() error {
 	if *surl != "" {
 		go func() {
 			_, _ = glib.IdleAdd(func() {
-				app.uiLoadURL(*surl, true)
+				app.uiGotoURL(*surl, true)
 			})
 		}()
 	} else {
-		app.loadHome()
+		app.uiGotoURL(homeURL, true)
 	}
 
 	gtk.Main()
