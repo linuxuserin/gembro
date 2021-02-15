@@ -51,6 +51,15 @@ func (app *App) loadURLBar(hb *gtk.Box, startURL string) error {
 	})
 	hb.Add(home)
 
+	stop, err := gtk.ButtonNewWithLabel("⏹")
+	if err != nil {
+		return err
+	}
+	_, _ = stop.Connect("clicked", func() {
+		app.cancelFunc()
+	})
+	hb.Add(stop)
+
 	spin, err := gtk.SpinnerNew()
 	if err != nil {
 		return err
@@ -98,6 +107,41 @@ func (app *App) loadMainUI(startURL string) error {
 		return err
 	}
 	_, _ = textView.Connect("button-release-event", app.clickTextBox)
+
+	// pointy := false
+	// _, _ = textView.Connect("motion-notify-event", func(w gtk.IWidget, ev *gdk.Event) {
+	// 	mot := gdk.EventMotionNewFromEvent(ev)
+	// 	x, y := mot.MotionVal()
+	// 	iter, _ := textView.GetIterAtPosition(int(x), int(y))
+	// 	gdkWin := textView.GetWindow(gtk.TEXT_WINDOW_TEXT)
+	// 	if surl := app.urlAtCurPos(iter.GetOffset()); surl != "" {
+	// 		if pointy {
+	// 			return
+	// 		}
+	// 		pointy = true
+	// 		dis, err := gdk.DisplayGetDefault()
+	// 		if err != nil {
+	// 			log.Print(err)
+	// 			return
+	// 		}
+	// 		point, err := gdk.CursorNewFromName(dis, "pointer")
+	// 		if err != nil {
+	// 			log.Print(err)
+	// 			return
+	// 		}
+	// 		gdkWin.SetCursor(point)
+	// 		fmt.Println("set pointy")
+	// 	} else {
+	// 		if !pointy {
+	// 			return
+	// 		}
+	// 		pointy = false
+	// 		dis, _ := gdk.DisplayGetDefault()
+	// 		point, _ := gdk.CursorNewFromName(dis, "default")
+	// 		gdkWin.SetCursor(point)
+	// 		fmt.Println("set non-pointy")
+	// 	}
+	// })
 	app.content = contentBuf
 	app.textView = textView
 	app.tags = map[string]*gtk.TextTag{
@@ -118,24 +162,6 @@ func (app *App) loadMainUI(startURL string) error {
 			"scale": float64(pango.SCALE_LARGE),
 		}),
 	}
-
-	// l, err := gtk.LabelNew("")
-	// if err != nil {
-	// 	return err
-	// }
-	// l.SetSelectable(true)
-	// l.SetLineWrap(true)
-	// l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
-	// l.SetHAlign(gtk.ALIGN_START)
-	// _, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
-	// 	if strings.HasPrefix(url, "gemini://") {
-	// 		app.gotoURL(url, true)
-	// 		return true
-	// 	}
-	// 	return false
-	// })
-	// app.label = l
-	// contentBox.Add(l)
 
 	f, err := gtk.ScrolledWindowNew(nil, nil)
 	if err != nil {
@@ -170,18 +196,23 @@ func (app *App) loadMainUI(startURL string) error {
 	return nil
 }
 
+func (app *App) urlAtCurPos(pos int) string {
+	for _, o := range app.links {
+		if o.Start <= pos && pos <= o.End {
+			return o.URL
+		}
+	}
+	return ""
+}
+
 func (app *App) clickTextBox() {
 	icurPos, err := app.content.GetProperty("cursor-position")
 	if err != nil {
 		log.Print(err)
 		return
 	}
-	curPos := icurPos.(int)
-	for _, o := range app.links {
-		if o.Start <= curPos && curPos <= o.End {
-			app.gotoURL(o.URL, true)
-			return
-		}
+	if surl := app.urlAtCurPos(icurPos.(int)); surl != "" {
+		app.gotoURL(surl, true)
 	}
 }
 

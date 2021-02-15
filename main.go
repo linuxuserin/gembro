@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"html"
@@ -26,7 +28,7 @@ func debugURL(surl string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := gemini.LoadURL(*u)
+	resp, err := gemini.LoadURL(context.Background(), *u)
 	if err != nil {
 		return err
 	}
@@ -50,6 +52,7 @@ type App struct {
 	currentURL     string
 	tags           map[string]*gtk.TextTag
 	links          []LinkOffset
+	cancelFunc     context.CancelFunc
 }
 
 func (a *App) setBookmarkIcon(has bool) {
@@ -180,32 +183,12 @@ func (a *App) renderMeta(meta string, surl string) {
 				_ = furl
 
 				startOffset := iter.GetOffset()
-				a.content.InsertWithTag(iter, link.Name, a.tags["link"])
-				if !strings.HasPrefix(furl, "gemini://") {
-					a.content.Insert(iter, fmt.Sprintf(" (%s)", strings.Split(furl, "://")[0]))
+				if furl != link.Name {
+					a.content.Insert(iter, fmt.Sprintf("%s: ", link.Name))
 				}
+				a.content.InsertWithTag(iter, furl, a.tags["link"])
 				a.links = append(a.links, LinkOffset{startOffset, iter.GetOffset(), furl})
 				a.content.Insert(iter, "\n")
-				// ca, err := a.content.CreateChildAnchor(iter)
-				// if err != nil {
-				// 	log.Print(err)
-				// 	continue
-				// }
-				// lb, err := gtk.LabelNew(link.Name)
-				// if err != nil {
-				// 	log.Print(err)
-				// 	continue
-				// }
-				// lb.SetMarkup(renderLink(furl, link.Name))
-				// _, _ = lb.Connect("activate-link", func() bool {
-				// 	if strings.HasPrefix(furl, "gemini://") {
-				// 		a.gotoURL(furl, true)
-				// 		return true
-				// 	}
-				// 	return false
-				// })
-				// a.textView.AddChildAtAnchor(lb, ca)
-				// a.content.Insert(iter, "\n")
 				continue
 			}
 			if strings.HasPrefix(line, "```") {
@@ -245,7 +228,10 @@ func (a *App) loadURL(surl string) (*gemini.Response, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid url: %s", err)
 		}
-		return gemini.LoadURL(*u)
+		a.cancelFunc()
+		ctx, done := context.WithCancel(context.Background())
+		a.cancelFunc = done
+		return gemini.LoadURL(ctx, *u)
 	}
 }
 
@@ -266,7 +252,11 @@ func (a *App) gotoURLDepth(surl string, addHistory bool, depth int) {
 		resp, err := a.loadURL(surl)
 		if err != nil {
 			log.Print(err)
-			body = "# Could not render the page\n\nThe server did not respond with something worthy"
+			if errors.Is(err, context.Canceled) {
+				body = "# Page canceled\n\nYou canceled this page"
+			} else {
+				body = "# Could not render the page\n\nThe server did not respond with something worthy"
+			}
 			resp = &gemini.Response{Body: body, Header: gemini.Header{Status: 2}, URL: surl}
 		}
 		switch resp.Header.Status {
@@ -347,7 +337,7 @@ func run() error {
 		return err
 	}
 
-	app := App{Bookmarks: bs}
+	app := App{Bookmarks: bs, cancelFunc: func() {}}
 	return app.loadMainUI(*surl)
 }
 

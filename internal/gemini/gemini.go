@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -73,22 +74,25 @@ func (r *Response) GetBody() (string, error) {
 	return e.NewDecoder().String(r.Body)
 }
 
-func LoadURL(surl url.URL) (*Response, error) {
+func LoadURL(ctx context.Context, surl url.URL) (*Response, error) {
 	port := surl.Port()
 	if port == "" {
 		port = "1965"
 	}
-	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%s", surl.Hostname(), port), &tls.Config{
-		InsecureSkipVerify: true,
-	})
+	d := tls.Dialer{
+		Config: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+	conn, err := d.DialContext(ctx, "tcp", fmt.Sprintf("%s:%s", surl.Hostname(), port))
 	if err != nil {
-		return nil, fmt.Errorf("could not connect to server: %s", err)
+		return nil, fmt.Errorf("could not connect to server: %w", err)
 	}
 	defer conn.Close()
 
 	// Send URL
 	if _, err := fmt.Fprintf(conn, "%s\r\n", surl.String()); err != nil {
-		return nil, fmt.Errorf("could not send url: %s", err)
+		return nil, fmt.Errorf("could not send url: %w", err)
 	}
 
 	rdr := bufio.NewReader(io.LimitReader(conn, 1024*1024))
