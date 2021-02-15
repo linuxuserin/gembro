@@ -1,8 +1,8 @@
 package main
 
 import (
+	"fmt"
 	"log"
-	"strings"
 
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
@@ -93,24 +93,39 @@ func (app *App) loadMainUI(startURL string) error {
 	}
 	contentBox.SetMarginStart(10)
 	contentBox.SetMarginEnd(10)
-
-	l, err := gtk.LabelNew("")
+	contentBuf, textView, err := createTextView(contentBox)
 	if err != nil {
 		return err
 	}
-	l.SetSelectable(true)
-	l.SetLineWrap(true)
-	l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
-	l.SetHAlign(gtk.ALIGN_START)
-	_, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
-		if strings.HasPrefix(url, "gemini://") {
-			app.gotoURL(url, true)
-			return true
-		}
-		return false
-	})
-	app.label = l
-	contentBox.Add(l)
+	app.content = contentBuf
+	app.textView = textView
+	app.tags = map[string]*gtk.TextTag{
+		"mono": app.content.CreateTag("mono", map[string]interface{}{
+			"family": "Monospace",
+		}),
+		"link": app.content.CreateTag("blue", map[string]interface{}{
+			// "foreground": "#0000FF",
+			"underline": pango.UNDERLINE_SINGLE,
+		}),
+	}
+
+	// l, err := gtk.LabelNew("")
+	// if err != nil {
+	// 	return err
+	// }
+	// l.SetSelectable(true)
+	// l.SetLineWrap(true)
+	// l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
+	// l.SetHAlign(gtk.ALIGN_START)
+	// _, _ = l.Connect("activate-link", func(l *gtk.Label, url string) bool {
+	// 	if strings.HasPrefix(url, "gemini://") {
+	// 		app.gotoURL(url, true)
+	// 		return true
+	// 	}
+	// 	return false
+	// })
+	// app.label = l
+	// contentBox.Add(l)
 
 	f, err := gtk.ScrolledWindowNew(nil, nil)
 	if err != nil {
@@ -179,4 +194,55 @@ func (app *App) clickBookmark() {
 func (app *App) activateURLbar(e *gtk.Entry) {
 	s, _ := e.GetText()
 	app.gotoURL(s, true)
+}
+
+type Container interface {
+	Add(gtk.IWidget)
+}
+
+func createLabel(container Container, text string) {
+	l, err := gtk.LabelNew(text)
+	if err != nil {
+		log.Printf("could not create label: %s", err)
+		return
+	}
+	l.SetSelectable(true)
+	l.SetLineWrap(true)
+	l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
+	l.SetHAlign(gtk.ALIGN_START)
+	container.Add(l)
+}
+
+func createLinkButton(container Container, label, url string, cb func(url string) bool) {
+	l, err := gtk.LinkButtonNew(label)
+	if err != nil {
+		log.Printf("could not create link button: %s", err)
+		return
+	}
+	// l.SetLineWrap(true)
+	// l.SetLineWrapMode(pango.WRAP_WORD_CHAR)
+	l.SetMarginStart(0)
+	l.SetHAlign(gtk.ALIGN_START)
+	l.SetUri(url)
+	_, _ = l.Connect("activate-link", func() bool {
+		return cb(url)
+	})
+	container.Add(l)
+}
+
+func createTextView(container Container) (*gtk.TextBuffer, *gtk.TextView, error) {
+	tf, err := gtk.TextBufferNew(nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not create textbuffer: %s", err)
+	}
+	t, err := gtk.TextViewNewWithBuffer(tf)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not create textview: %s", err)
+	}
+	t.SetWrapMode(gtk.WRAP_WORD_CHAR)
+	t.SetEditable(false)
+	t.SetLeftMargin(10)
+	t.SetTopMargin(10)
+	container.Add(t)
+	return tf, t, nil
 }

@@ -37,12 +37,14 @@ func debugURL(surl string) error {
 
 type App struct {
 	Spin           *gtk.Spinner
-	label          *gtk.Label
+	content        *gtk.TextBuffer
+	textView       *gtk.TextView
 	Entry          *gtk.Entry
 	bookmarkButton *gtk.Button
 	History        history.History
 	Bookmarks      *bookmark.BookmarkStore
 	currentURL     string
+	tags           map[string]*gtk.TextTag
 }
 
 func (a *App) setBookmarkIcon(has bool) {
@@ -127,7 +129,69 @@ func (a *App) renderMeta(meta string, surl string) {
 		} else {
 			a.setBookmarkIcon(false)
 		}
-		a.label.SetMarkup(meta)
+
+		a.content.SetText("")
+
+		var p []string
+		var mono bool
+		iter := a.content.GetStartIter()
+		addP := func() {
+			if len(p) == 0 {
+				return
+			}
+			if mono {
+				a.content.InsertWithTag(iter, strings.Join(p, "\n"), a.tags["mono"])
+			} else {
+				a.content.Insert(iter, strings.Join(p, "\n"))
+			}
+			p = nil
+		}
+
+		for _, line := range strings.Split(meta, "\n") {
+			if strings.HasPrefix(line, "=>") {
+				addP()
+				link, err := gemini.ParseLink(line)
+				if err != nil {
+					link = &gemini.Link{URL: "", Name: "Invalid link"}
+				}
+				furl := link.FullURL(surl)
+				// a.content.InsertWithTag(iter, fmt.Sprintf("%s\n", link.Name), a.tags["link"])
+				ca, err := a.content.CreateChildAnchor(iter)
+				if err != nil {
+					log.Print(err)
+					continue
+				}
+				lb, err := gtk.LabelNew(link.Name)
+				if err != nil {
+					log.Print(err)
+					continue
+				}
+				markup := fmt.Sprintf(`<a href="%[1]s" title="%[2]s">%[1]s</a>`, furl, link.Name)
+				if !strings.HasPrefix(furl, "gemini://") {
+					markup += fmt.Sprintf(" (%s)", strings.Split(furl, "://")[0])
+				}
+				lb.SetMarkup(markup)
+				_, _ = lb.Connect("activate-link", func() bool {
+					if strings.HasPrefix(furl, "gemini://") {
+						a.gotoURL(furl, true)
+						return true
+					}
+					return false
+				})
+				a.textView.AddChildAtAnchor(lb, ca)
+				a.content.Insert(iter, "\n")
+				continue
+			}
+			if strings.HasPrefix(line, "```") {
+				addP()
+				mono = !mono
+				continue
+			}
+			p = append(p, line)
+		}
+		addP()
+
+		a.textView.ShowAll()
 		a.Spin.Stop()
 	})
 }
@@ -237,47 +301,7 @@ func (a *App) gotoURLDepth(surl string, addHistory bool, depth int) {
 		}
 		a.currentURL = resp.URL
 
-		lines := strings.Split(body, "\n")
-		var mono bool
-		for i, line := range lines {
-			if strings.HasPrefix(line, "```") {
-				mono = !mono
-				if mono {
-					lines[i] = `<tt>`
-				} else {
-					lines[i] = `</tt>`
-				}
-				continue
-			}
-			if !mono && strings.HasPrefix(line, "=>") {
-				l, err := gemini.ParseLink(line)
-				if err != nil {
-					l = &gemini.Link{URL: "", Name: "Invalid link: " + line}
-				}
-				rl := renderLink(l.FullURL(resp.URL), l.Name)
-				lines[i] = rl
-				continue
-			}
-			line = template.HTMLEscapeString(line)
-			if !mono && strings.HasPrefix(line, "# ") {
-				lines[i] = fmt.Sprintf(`<span size="xx-large">%s</span>`, line[2:])
-				continue
-			}
-			if !mono && strings.HasPrefix(line, "## ") {
-				lines[i] = fmt.Sprintf(`<span size="x-large">%s</span>`, line[3:])
-				continue
-			}
-			if !mono && strings.HasPrefix(line, "### ") {
-				lines[i] = fmt.Sprintf(`<span size="large">%s</span>`, line[4:])
-				continue
-			}
-			lines[i] = line
-		}
-		if mono {
-			lines = append(lines, "</tt>")
-		}
-
-		a.renderMeta(strings.Join(lines, "\n"), a.currentURL)
+		a.renderMeta(body, a.currentURL)
 	}()
 }
 
