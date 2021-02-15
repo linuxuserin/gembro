@@ -183,10 +183,10 @@ func (a *App) renderMeta(meta string, surl string) {
 				_ = furl
 
 				startOffset := iter.GetOffset()
-				if furl != link.Name {
-					a.content.Insert(iter, fmt.Sprintf("%s: ", link.Name))
+				a.content.InsertWithTag(iter, link.Name, a.tags["link"])
+				if !strings.HasPrefix(furl, "gemini://") {
+					a.content.Insert(iter, fmt.Sprintf(" (%s)", strings.Split(furl, "://")[0]))
 				}
-				a.content.InsertWithTag(iter, furl, a.tags["link"])
 				a.links = append(a.links, LinkOffset{startOffset, iter.GetOffset(), furl})
 				a.content.Insert(iter, "\n")
 				continue

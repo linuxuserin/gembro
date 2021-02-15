@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/gotk3/gotk3/pango"
@@ -108,7 +109,7 @@ func (app *App) loadMainUI(startURL string) error {
 	if err != nil {
 		return err
 	}
-	_, _ = textView.Connect("button-release-event", app.clickTextBox)
+	_, _ = textView.Connect("button-press-event", app.clickTextBox)
 
 	// pointy := false
 	// _, _ = textView.Connect("motion-notify-event", func(w gtk.IWidget, ev *gdk.Event) {
@@ -207,22 +208,84 @@ func (app *App) urlAtCurPos(pos int) string {
 	return ""
 }
 
-func (app *App) clickTextBox() {
-	icurPos, err := app.content.GetProperty("cursor-position")
-	if err != nil {
-		log.Print(err)
+func (app *App) askToOpen(surl string) {
+	d := gtk.MessageDialogNew(nil, 0, gtk.MESSAGE_INFO, gtk.BUTTONS_OK_CANCEL,
+		surl)
+	d.SetTitle("Do you want to open")
+	_, _ = d.Connect("response", func(_ *gtk.MessageDialog, r gtk.ResponseType) {
+		defer d.Destroy()
+		switch r {
+		case gtk.RESPONSE_OK:
+			cmd := exec.Command("xdg-open", surl)
+			if err := cmd.Start(); err != nil {
+				log.Print(err)
+			}
+		}
+	})
+	d.ShowAll()
+}
+
+func (app *App) openURL(surl string) {
+
+	if strings.HasPrefix(surl, "gemini://") {
+		app.gotoURL(surl, true)
 		return
 	}
-	if surl := app.urlAtCurPos(icurPos.(int)); surl != "" {
-		if strings.HasPrefix(surl, "gemini://") {
-			app.gotoURL(surl, true)
-			return
+	app.askToOpen(surl)
+}
+
+func (app *App) clickTextBox(w *gtk.TextView, ev *gdk.Event) bool {
+	event := gdk.EventButtonNewFromEvent(ev)
+	switch event.Button() {
+	case 1: // Left
+		x, y := event.MotionVal()
+		rx, ry := w.WindowToBufferCoords(gtk.TEXT_WINDOW_WIDGET, int(x), int(y))
+		iter := w.GetIterAtLocation(int(rx), int(ry))
+		if surl := app.urlAtCurPos(iter.GetOffset()); surl != "" {
+			app.openURL(surl)
+			return true
 		}
-		cmd := exec.Command("xdg-open", surl)
-		if err := cmd.Start(); err != nil {
-			log.Print(err)
+	case 3: // Right
+		x, y := event.MotionVal()
+		rx, ry := w.WindowToBufferCoords(gtk.TEXT_WINDOW_WIDGET, int(x), int(y))
+		iter := w.GetIterAtLocation(int(rx), int(ry))
+		if surl := app.urlAtCurPos(iter.GetOffset()); surl != "" {
+			m, _ := gtk.MenuNew()
+			m.SetTooltipText(surl)
+			mi, _ := gtk.MenuItemNewWithLabel("Go to URL")
+			_, _ = mi.Connect("activate", func() {
+				app.openURL(surl)
+			})
+			m.Add(mi)
+			s := "Bookmark"
+			if app.Bookmarks.Contains(surl) {
+				s = "Remove bookmark"
+			}
+			mi, _ = gtk.MenuItemNewWithLabel(s)
+			_, _ = mi.Connect("activate", func() {
+				if app.Bookmarks.Contains(surl) {
+					if err := app.Bookmarks.Remove(surl); err != nil {
+						log.Print(err)
+					}
+				} else {
+					if err := app.Bookmarks.Add(surl, surl); err != nil {
+						log.Print(err)
+					}
+				}
+			})
+			m.Add(mi)
+			mi, _ = gtk.MenuItemNewWithLabel("Copy URL")
+			_, _ = mi.Connect("activate", func() {
+				cb, _ := gtk.ClipboardGet(gdk.SELECTION_CLIPBOARD)
+				cb.SetText(surl)
+			})
+			m.Add(mi)
+			m.ShowAll()
+			m.PopupAtPointer(ev)
+			return true
 		}
 	}
+	return false
 }
 
 func (app *App) clickBack() {

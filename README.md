@@ -19,7 +19,7 @@ go build
 ## Todo
 
 - Handle other content types (plain/text), open with...
-- Handle cancellation
+- Opening links in new window?
 - Handle errors
 - Handle image links 
 - Cert pinning
