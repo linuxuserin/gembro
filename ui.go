@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os/exec"
+	"strings"
 
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
@@ -212,7 +214,14 @@ func (app *App) clickTextBox() {
 		return
 	}
 	if surl := app.urlAtCurPos(icurPos.(int)); surl != "" {
-		app.gotoURL(surl, true)
+		if strings.HasPrefix(surl, "gemini://") {
+			app.gotoURL(surl, true)
+			return
+		}
+		cmd := exec.Command("xdg-open", surl)
+		if err := cmd.Start(); err != nil {
+			log.Print(err)
+		}
 	}
 }
 
