@@ -97,6 +97,7 @@ func (app *App) loadMainUI(startURL string) error {
 	if err != nil {
 		return err
 	}
+	_, _ = textView.Connect("button-release-event", app.clickTextBox)
 	app.content = contentBuf
 	app.textView = textView
 	app.tags = map[string]*gtk.TextTag{
@@ -104,8 +105,17 @@ func (app *App) loadMainUI(startURL string) error {
 			"family": "Monospace",
 		}),
 		"link": app.content.CreateTag("blue", map[string]interface{}{
-			// "foreground": "#0000FF",
-			"underline": pango.UNDERLINE_SINGLE,
+			"foreground": "#58a6ff",
+			"underline":  pango.UNDERLINE_SINGLE,
+		}),
+		"h1": app.content.CreateTag("h1", map[string]interface{}{
+			"scale": float64(pango.SCALE_XX_LARGE),
+		}),
+		"h2": app.content.CreateTag("h2", map[string]interface{}{
+			"scale": float64(pango.SCALE_X_LARGE),
+		}),
+		"h3": app.content.CreateTag("h3", map[string]interface{}{
+			"scale": float64(pango.SCALE_LARGE),
 		}),
 	}
 
@@ -158,6 +168,21 @@ func (app *App) loadMainUI(startURL string) error {
 
 	gtk.Main()
 	return nil
+}
+
+func (app *App) clickTextBox() {
+	icurPos, err := app.content.GetProperty("cursor-position")
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	curPos := icurPos.(int)
+	for _, o := range app.links {
+		if o.Start <= curPos && curPos <= o.End {
+			app.gotoURL(o.URL, true)
+			return
+		}
+	}
 }
 
 func (app *App) clickBack() {
@@ -243,6 +268,9 @@ func createTextView(container Container) (*gtk.TextBuffer, *gtk.TextView, error)
 	t.SetEditable(false)
 	t.SetLeftMargin(10)
 	t.SetTopMargin(10)
+	t.SetBottomMargin(10)
+	t.SetRightMargin(10)
+	t.SetCursorVisible(false)
 	container.Add(t)
 	return tf, t, nil
 }

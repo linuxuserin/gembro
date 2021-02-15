@@ -74,7 +74,11 @@ func (r *Response) GetBody() (string, error) {
 }
 
 func LoadURL(surl url.URL) (*Response, error) {
-	conn, err := tls.Dial("tcp", surl.Hostname()+":1965", &tls.Config{
+	port := surl.Port()
+	if port == "" {
+		port = "1965"
+	}
+	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%s", surl.Hostname(), port), &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {

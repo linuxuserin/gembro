@@ -35,6 +35,10 @@ func debugURL(surl string) error {
 	return nil
 }
 
+type LinkOffset struct {
+	Start, End int
+	URL        string
+}
 type App struct {
 	Spin           *gtk.Spinner
 	content        *gtk.TextBuffer
@@ -45,6 +49,7 @@ type App struct {
 	Bookmarks      *bookmark.BookmarkStore
 	currentURL     string
 	tags           map[string]*gtk.TextTag
+	links          []LinkOffset
 }
 
 func (a *App) setBookmarkIcon(has bool) {
@@ -132,6 +137,7 @@ func (a *App) renderMeta(meta string, surl string) {
 
 		a.content.SetText("")
 
+		a.links = nil
 		var p []string
 		var mono bool
 		iter := a.content.GetStartIter()
@@ -139,15 +145,31 @@ func (a *App) renderMeta(meta string, surl string) {
 			if len(p) == 0 {
 				return
 			}
+			joined := strings.Join(p, "\n")
 			if mono {
-				a.content.InsertWithTag(iter, strings.Join(p, "\n"), a.tags["mono"])
+				a.content.InsertWithTag(iter, joined+"\n", a.tags["mono"])
 			} else {
-				a.content.Insert(iter, strings.Join(p, "\n"))
+				a.content.Insert(iter, joined+"\n")
 			}
 			p = nil
 		}
 
 		for _, line := range strings.Split(meta, "\n") {
+			if strings.HasPrefix(line, "# ") {
+				addP()
+				a.content.InsertWithTag(iter, line[2:]+"\n", a.tags["h1"])
+				continue
+			}
+			if strings.HasPrefix(line, "## ") {
+				addP()
+				a.content.InsertWithTag(iter, line[3:]+"\n", a.tags["h2"])
+				continue
+			}
+			if strings.HasPrefix(line, "### ") {
+				addP()
+				a.content.InsertWithTag(iter, line[4:]+"\n", a.tags["h3"])
+				continue
+			}
 			if strings.HasPrefix(line, "=>") {
 				addP()
 				link, err := gemini.ParseLink(line)
@@ -155,31 +177,35 @@ func (a *App) renderMeta(meta string, surl string) {
 					link = &gemini.Link{URL: "", Name: "Invalid link"}
 				}
 				furl := link.FullURL(surl)
-				// a.content.InsertWithTag(iter, fmt.Sprintf("%s\n", link.Name), a.tags["link"])
-				ca, err := a.content.CreateChildAnchor(iter)
-				if err != nil {
-					log.Print(err)
-					continue
-				}
-				lb, err := gtk.LabelNew(link.Name)
-				if err != nil {
-					log.Print(err)
-					continue
-				}
-				markup := fmt.Sprintf(`<a href="%[1]s" title="%[2]s">%[1]s</a>`, furl, link.Name)
+				_ = furl
+
+				startOffset := iter.GetOffset()
+				a.content.InsertWithTag(iter, link.Name, a.tags["link"])
 				if !strings.HasPrefix(furl, "gemini://") {
-					markup += fmt.Sprintf(" (%s)", strings.Split(furl, "://")[0])
+					a.content.Insert(iter, fmt.Sprintf(" (%s)", strings.Split(furl, "://")[0]))
 				}
-				lb.SetMarkup(markup)
-				_, _ = lb.Connect("activate-link", func() bool {
-					if strings.HasPrefix(furl, "gemini://") {
-						a.gotoURL(furl, true)
-						return true
-					}
-					return false
-				})
-				a.textView.AddChildAtAnchor(lb, ca)
+				a.links = append(a.links, LinkOffset{startOffset, iter.GetOffset(), furl})
 				a.content.Insert(iter, "\n")
+				// ca, err := a.content.CreateChildAnchor(iter)
+				// if err != nil {
+				// 	log.Print(err)
+				// 	continue
+				// }
+				// lb, err := gtk.LabelNew(link.Name)
+				// if err != nil {
+				// 	log.Print(err)
+				// 	continue
+				// }
+				// lb.SetMarkup(renderLink(furl, link.Name))
+				// _, _ = lb.Connect("activate-link", func() bool {
+				// 	if strings.HasPrefix(furl, "gemini://") {
+				// 		a.gotoURL(furl, true)
+				// 		return true
+				// 	}
+				// 	return false
+				// })
+				// a.textView.AddChildAtAnchor(lb, ca)
+				// a.content.Insert(iter, "\n")
 				continue
 			}
 			if strings.HasPrefix(line, "```") {
