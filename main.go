@@ -7,14 +7,14 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"strings"
 
 	"git.sr.ht/~rafael/gemini-browser/internal/gemini"
 )
 
-func debugURL(surl string) error {
-	u, err := url.Parse(surl)
+func debugURL(url string) error {
+	u, err := neturl.Parse(url)
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ var style = `
 	a {color: cornflowerblue; text-decoration: none}
 	pre {margin:0}
 	span, blockquote {white-space: pre-wrap}
-	blockquote { font-style: italic }
+	blockquote { font-style: italic; margin: 0; }
 	.outer {margin: 0 auto; max-width: 600px; padding-top: 20px; overflow-wrap: anywhere}
 `
 
@@ -55,7 +55,22 @@ var homeGemText = `# Gemini Proxy
 => gemini://gus.guru/ GUS - Gemini Universal Search
 => gemini://dioskouroi.xyz/top Gemgohane: GEmini GOpher HAckerNEws Mirror`
 
-func geminiToHTML(input, parentURL string) string {
+var outerHTML = `<!doctype html><html><head><title>%s</title><style>%s</style></head>` +
+	`<body><div class="outer">%s</div></body></html>`
+
+var inputFormHTML = `<form action="" method="GET">
+	<input type="hidden" name="url" value="%s">
+	<input id="q" name="q" placeholder="%s" autofocus>
+	<button>Enter</button>
+</form>
+`
+
+func inputForm(prompt, url string) string {
+	html := fmt.Sprintf(outerHTML, "Requesting input", style, format(inputFormHTML, url, prompt))
+	return html
+}
+
+func geminiToHTML(input, url string) string {
 	lines := strings.Split(input, "\n")
 	pageTitle := ""
 	var mono bool
@@ -77,7 +92,7 @@ func geminiToHTML(input, parentURL string) string {
 			continue
 		}
 		if strings.HasPrefix(line, ">") {
-			lines[i] = format(`<blockquote>%s</blockquote><br>`, line[1:])
+			lines[i] = format(`<blockquote>%s</blockquote>`, line[1:])
 			continue
 		}
 		if strings.HasPrefix(line, "```") {
@@ -94,7 +109,7 @@ func geminiToHTML(input, parentURL string) string {
 			if err != nil {
 				link = &gemini.Link{URL: "", Name: "Invalid link"}
 			}
-			furl := link.FullURL(parentURL)
+			furl := link.FullURL(url)
 			if strings.HasPrefix(furl, "gemini://") {
 				furl = fmt.Sprintf("?url=%s", furl)
 				lines[i] = format(`<a href="%[1]s" title="%[1]s">%[2]s</a><br>`,
@@ -110,11 +125,16 @@ func geminiToHTML(input, parentURL string) string {
 		lines = append(lines, "</pre>")
 	}
 	if pageTitle == "" {
-		pageTitle = parentURL
+		pageTitle = url
 	}
-	return fmt.Sprintf(`<!doctype html><html><head><title>%s</title><style>%s</style></head>`+
-		`<body><div class="outer">%s</div></body></html>`,
+	return fmt.Sprintf(outerHTML,
 		pageTitle, style, strings.Join(lines, ""))
+}
+
+func errorResponse(w http.ResponseWriter, msg string, code int) {
+	w.WriteHeader(code)
+	w.Header().Set("Content-type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, outerHTML, "Error", style, format("<p>%s</p>", msg))
 }
 
 func run() error {
@@ -136,23 +156,30 @@ func run() error {
 			fmt.Fprint(w, geminiToHTML(homeGemText, ""))
 			return
 		}
-
-		u, err := url.Parse(rurl)
+		if q := r.FormValue("q"); q != "" {
+			rurl = fmt.Sprintf("%s?%s", rurl, neturl.QueryEscape(q))
+			http.Redirect(w, r, fmt.Sprintf("?url=%s", neturl.QueryEscape(rurl)), http.StatusMovedPermanently)
+			return
+		}
+		u, err := neturl.Parse(rurl)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			errorResponse(w, "Invalid URL", http.StatusBadRequest)
 			return
 		}
 		resp, err := gemini.LoadURL(r.Context(), *u)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			log.Print(err)
+			errorResponse(w, "Something went wrong", http.StatusInternalServerError)
 			return
 		}
 		switch resp.Header.Status {
-		// case 1:
+		case 1:
+			w.Header().Set("Content-type", "text/html; charset=utf-8")
+			fmt.Fprint(w, inputForm(resp.Header.Meta, rurl))
 		case 2:
 			b, err := resp.GetBody()
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				errorResponse(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			if r.FormValue("src") == "1" {
@@ -164,12 +191,23 @@ func run() error {
 		case 3:
 			u, err := u.Parse(resp.Header.Meta)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				errorResponse(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			http.Redirect(w, r, fmt.Sprintf("?url=%s", u), http.StatusMovedPermanently)
+		case 4:
+			errorResponse(w, fmt.Sprintf("Temporary failure: %s", resp.Header.Meta), http.StatusServiceUnavailable)
+		case 5:
+			if resp.Header.StatusDetail == 1 {
+				errorResponse(w, "Page not found", http.StatusNotFound)
+				return
+			}
+			errorResponse(w, fmt.Sprintf("Permanent failure: %s", resp.Header.Meta), http.StatusServiceUnavailable)
+		case 6:
+			errorResponse(w, fmt.Sprintf("Client certificate required: %s", resp.Header.Meta), http.StatusBadRequest)
 		default:
-			http.Error(w, "Nothing to do", http.StatusBadRequest)
+			log.Printf("could not parse response for %q: %#v", u.String(), resp)
+			errorResponse(w, "Unknown error", http.StatusTeapot)
 		}
 	}))
 }
