@@ -39,16 +39,28 @@ var style = `
 	body {background: black; color: white; font-family: monospace}
 	.h1 {color: red; font-weight: bold}
 	.h2 {color: yellow; font-weight: bold}
-	a {color: #58a6ff}
+	.h3 {color: fuchsia; font-weight: bold}
+	a {color: cornflowerblue; text-decoration: none}
 	pre {margin:0}
+	span, blockquote {white-space: pre-wrap}
+	blockquote { font-style: italic }
 	.outer {margin: 0 auto; max-width: 600px; padding-top: 20px; overflow-wrap: anywhere}
 `
+
+var homeGemText = `# Gemini Proxy
+
+## Useful links
+
+=> gemini://gemini.circumlunar.space/ Project Gemini
+=> gemini://gus.guru/ GUS - Gemini Universal Search
+=> gemini://dioskouroi.xyz/top Gemgohane: GEmini GOpher HAckerNEws Mirror`
 
 func geminiToHTML(input, parentURL string) string {
 	lines := strings.Split(input, "\n")
 	pageTitle := ""
 	var mono bool
 	for i, line := range lines {
+		line = strings.TrimRight(line, "\r")
 		if strings.HasPrefix(line, "# ") {
 			lines[i] = format(`<span class="h1">%s</span><br>`, line)
 			if pageTitle == "" {
@@ -62,6 +74,10 @@ func geminiToHTML(input, parentURL string) string {
 		}
 		if strings.HasPrefix(line, "### ") {
 			lines[i] = format(`<span class="h3">%s</span><br>`, line)
+			continue
+		}
+		if strings.HasPrefix(line, ">") {
+			lines[i] = format(`<blockquote>%s</blockquote><br>`, line[1:])
 			continue
 		}
 		if strings.HasPrefix(line, "```") {
@@ -115,43 +131,46 @@ func run() error {
 	// app := App{Bookmarks: bs, cancelFunc: func() {}}
 	return http.ListenAndServe(*host, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rurl := r.FormValue("url")
-		if rurl != "" {
-			u, err := url.Parse(rurl)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			resp, err := gemini.LoadURL(r.Context(), *u)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			switch resp.Header.Status {
-			case 1:
-			case 2:
-				b, err := resp.GetBody()
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-				if r.FormValue("src") == "1" {
-					fmt.Fprint(w, b)
-					return
-				}
-				w.Header().Set("Content-type", "text/html; charset=utf-8")
-				fmt.Fprint(w, geminiToHTML(b, rurl))
-			case 3:
-				u, err := u.Parse(resp.Header.Meta)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-				http.Redirect(w, r, fmt.Sprintf("?url=%s", u), http.StatusMovedPermanently)
-			}
+		if rurl == "" {
+			w.Header().Set("Content-type", "text/html; charset=utf-8")
+			fmt.Fprint(w, geminiToHTML(homeGemText, ""))
 			return
 		}
 
-		http.Error(w, "Nothing to do", http.StatusBadRequest)
+		u, err := url.Parse(rurl)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp, err := gemini.LoadURL(r.Context(), *u)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		switch resp.Header.Status {
+		// case 1:
+		case 2:
+			b, err := resp.GetBody()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if r.FormValue("src") == "1" {
+				fmt.Fprint(w, b)
+				return
+			}
+			w.Header().Set("Content-type", "text/html; charset=utf-8")
+			fmt.Fprint(w, geminiToHTML(b, rurl))
+		case 3:
+			u, err := u.Parse(resp.Header.Meta)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			http.Redirect(w, r, fmt.Sprintf("?url=%s", u), http.StatusMovedPermanently)
+		default:
+			http.Error(w, "Nothing to do", http.StatusBadRequest)
+		}
 	}))
 }
 
