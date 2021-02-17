@@ -36,15 +36,15 @@ func format(html string, args ...string) string {
 }
 
 var style = `
-	body {background: black; color: white; font-family: monospace}
+	body {background:black;color:white;font-family:'Source Code Pro', monospace;line-height:150%;font-size:1em;}
 	.h1 {color: red; font-weight: bold}
 	.h2 {color: yellow; font-weight: bold}
 	.h3 {color: fuchsia; font-weight: bold}
 	a {color: cornflowerblue; text-decoration: none}
 	pre {margin:0}
-	span, blockquote {white-space: pre-wrap}
 	blockquote { font-style: italic; margin: 0; }
-	.outer {margin: 0 auto; max-width: 600px; padding-top: 20px; overflow-wrap: anywhere}
+	.outer {margin: 0 auto; max-width: 600px; padding-top: 20px; overflow-wrap: anywhere;white-space:pre-wrap}
+	pre{color:palegoldenrod}
 `
 
 var homeGemText = `# Gemini Proxy
@@ -76,22 +76,22 @@ func geminiToHTML(input, url string) string {
 	var mono bool
 	for i, line := range lines {
 		line = strings.TrimRight(line, "\r")
-		if strings.HasPrefix(line, "# ") {
-			lines[i] = format(`<span class="h1">%s</span><br>`, line)
+		if !mono && strings.HasPrefix(line, "# ") {
+			lines[i] = format(`<span class="h1">%s</span>`, line)
 			if pageTitle == "" {
 				pageTitle = line[2:]
 			}
 			continue
 		}
-		if strings.HasPrefix(line, "## ") {
-			lines[i] = format(`<span class="h2">%s</span><br>`, line)
+		if !mono && strings.HasPrefix(line, "## ") {
+			lines[i] = format(`<span class="h2">%s</span>`, line)
 			continue
 		}
-		if strings.HasPrefix(line, "### ") {
-			lines[i] = format(`<span class="h3">%s</span><br>`, line)
+		if !mono && strings.HasPrefix(line, "### ") {
+			lines[i] = format(`<span class="h3">%s</span>`, line)
 			continue
 		}
-		if strings.HasPrefix(line, ">") {
+		if !mono && strings.HasPrefix(line, ">") {
 			lines[i] = format(`<blockquote>%s</blockquote>`, line[1:])
 			continue
 		}
@@ -112,14 +112,18 @@ func geminiToHTML(input, url string) string {
 			furl := link.FullURL(url)
 			if strings.HasPrefix(furl, "gemini://") {
 				furl = fmt.Sprintf("?url=%s", furl)
-				lines[i] = format(`<a href="%[1]s" title="%[1]s">%[2]s</a><br>`,
+				lines[i] = format(`<a href="%[1]s" title="%[1]s">%[2]s</a>`,
 					furl, link.Name)
 			} else {
-				lines[i] = format(`<a href="%[1]s" title="%[1]s" target="_blank">%[2]s</a><br>`, furl, link.Name)
+				lines[i] = format(`<a href="%[1]s" title="%[1]s" target="_blank">%[2]s</a>`, furl, link.Name)
 			}
 			continue
 		}
-		lines[i] = format(`<span>%s</span><br>`, line)
+		if mono {
+			lines[i] = format(`%s`, line)
+			continue
+		}
+		lines[i] = format(`<span>%s</span>`, line)
 	}
 	if mono {
 		lines = append(lines, "</pre>")
@@ -128,7 +132,7 @@ func geminiToHTML(input, url string) string {
 		pageTitle = url
 	}
 	return fmt.Sprintf(outerHTML,
-		pageTitle, style, strings.Join(lines, ""))
+		pageTitle, style, strings.Join(lines, "\n"))
 }
 
 func errorResponse(w http.ResponseWriter, msg string, code int) {
