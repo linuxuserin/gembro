@@ -36,7 +36,7 @@ func format(html string, args ...string) string {
 }
 
 var style = `
-	body {background:black;color:white;font-family:'Source Code Pro', monospace;line-height:150%;font-size:1em;}
+	body {background:black;color:white;font-family:'Source Code Pro', monospace;font-size:1em;}
 	.h1 {color: red; font-weight: bold}
 	.h2 {color: yellow; font-weight: bold}
 	.h3 {color: fuchsia; font-weight: bold}
