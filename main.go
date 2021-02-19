@@ -42,7 +42,7 @@ var style = `
 	.h3 {color: fuchsia; font-weight: bold}
 	a {color: cornflowerblue; text-decoration: none}
 	pre {margin:0}
-	blockquote { font-style: italic; margin: 0; }
+	blockquote {font-style:italic;margin:0;padding:0 0 0 10px;display:inline-block;border-left:1px solid grey}
 	.outer {margin: 0 auto; max-width: 600px; padding-top: 20px; overflow-wrap: anywhere;white-space:pre-wrap}
 	pre{color:palegoldenrod}
 `
@@ -92,7 +92,7 @@ func geminiToHTML(input, url string) string {
 			continue
 		}
 		if !mono && strings.HasPrefix(line, ">") {
-			lines[i] = format(`<blockquote>%s</blockquote>`, line[1:])
+			lines[i] = format(`<blockquote>%s</blockquote>`, strings.TrimLeft(line[1:], " "))
 			continue
 		}
 		if strings.HasPrefix(line, "```") {
