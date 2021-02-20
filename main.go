@@ -181,17 +181,22 @@ func run() error {
 			w.Header().Set("Content-type", "text/html; charset=utf-8")
 			fmt.Fprint(w, inputForm(resp.Header.Meta, rurl))
 		case 2:
-			b, err := resp.GetBody()
-			if err != nil {
-				errorResponse(w, err.Error(), http.StatusBadRequest)
-				return
+			if strings.HasPrefix(resp.Header.Meta, "text/gemini") {
+				b, err := resp.GetBody()
+				if err != nil {
+					errorResponse(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if r.FormValue("src") == "1" {
+					fmt.Fprint(w, b)
+					return
+				}
+				w.Header().Set("Content-type", "text/html; charset=utf-8")
+				fmt.Fprint(w, geminiToHTML(b, rurl))
+			} else {
+				w.Header().Set("Content-type", resp.Header.Meta)
+				fmt.Fprint(w, resp.Body)
 			}
-			if r.FormValue("src") == "1" {
-				fmt.Fprint(w, b)
-				return
-			}
-			w.Header().Set("Content-type", "text/html; charset=utf-8")
-			fmt.Fprint(w, geminiToHTML(b, rurl))
 		case 3:
 			u, err := u.Parse(resp.Header.Meta)
 			if err != nil {
