@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"git.sr.ht/~rafael/gemini-browser/internal/gemini"
+	"github.com/muesli/reflow/wordwrap"
 )
 
 func debugURL(url string) error {
@@ -37,15 +38,17 @@ func format(html string, args ...string) string {
 }
 
 var style = `
-	body {background:black;color:white;font-family:'Source Code Pro', monospace;font-size:1em;}
-	.h1 {color: red; font-weight: bold}
-	.h2 {color: yellow; font-weight: bold}
-	.h3 {color: fuchsia; font-weight: bold}
-	a {color: cornflowerblue; text-decoration: none}
-	pre {margin:0}
-	blockquote {font-style:italic;margin:0;padding:0 0 0 10px;display:inline-block;border-left:1px solid grey}
-	.outer {margin: 0 auto; max-width: 600px; padding-top: 20px; overflow-wrap: anywhere;white-space:pre-wrap}
-	pre{color:palegoldenrod;white-space:pre-wrap}
+body {background:black;color:white;font-family:'Source Code Pro',
+	monospace;font-size:15px;margin:0}
+p {padding:0;margin:0}
+.h1 {color: red; font-weight: bold}
+.h2 {color: yellow; font-weight: bold}
+.h3 {color: fuchsia; font-weight: bold}
+a {color: cornflowerblue; text-decoration: none}
+pre {margin:0}
+blockquote {font-style:italic;margin:0;padding:0 0 0 10px;display:inline-block;border-left:1px solid grey}
+.outer {margin: 0 auto;width:800px;padding-top: 20px;white-space:pre}
+pre{color:palegoldenrod}
 `
 
 var homeGemText = `# Gemini Proxy
@@ -71,13 +74,56 @@ func inputForm(prompt, url string) string {
 	return html
 }
 
+const columns = 80
+
 func geminiToHTML(input, url string) string {
 	pageTitle := ""
 	var mono bool
-	var buf bytes.Buffer
+	var buf, tempBuf bytes.Buffer
+	addTemp := func() {
+		s := tempBuf.String()
+		if s == "" {
+			return
+		}
+		if mono {
+			fmt.Fprintf(&buf, "<pre>\n%s</pre>", s)
+		} else {
+			fmt.Fprintf(&buf, "<p>%s</p>", s)
+		}
+		tempBuf.Reset()
+	}
 	for _, line := range strings.Split(input, "\n") {
-		line = strings.TrimRight(line, "\r")
+		if strings.HasPrefix(line, "```") {
+			addTemp()
+			mono = !mono
+			continue
+		}
+		if mono {
+			fmt.Fprintln(&tempBuf, format(`%s`, line))
+			continue
+		}
+		if strings.HasPrefix(line, "=>") {
+			addTemp()
+			link, err := gemini.ParseLink(line)
+			if err != nil {
+				link = &gemini.Link{URL: "", Name: "Invalid link"}
+			}
+			furl := link.FullURL(url)
+			name := wordwrap.String(link.Name, columns)
+			if strings.HasPrefix(furl, "gemini://") {
+				furl = fmt.Sprintf("?url=%s", furl)
+				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s">%[2]s</a>`,
+					furl, name))
+			} else {
+				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s" target="_blank">%[2]s</a>`,
+					furl, name))
+			}
+			continue
+		}
+
+		line = wordwrap.String(strings.TrimRight(line, "\r"), columns)
 		if !mono && strings.HasPrefix(line, "# ") {
+			addTemp()
 			fmt.Fprintln(&buf, format(`<span class="h1">%s</span>`, line))
 			if pageTitle == "" {
 				pageTitle = line[2:]
@@ -85,50 +131,23 @@ func geminiToHTML(input, url string) string {
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "## ") {
+			addTemp()
 			fmt.Fprintln(&buf, format(`<span class="h2">%s</span>`, line))
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "### ") {
+			addTemp()
 			fmt.Fprintln(&buf, format(`<span class="h3">%s</span>`, line))
 			continue
 		}
 		if !mono && strings.HasPrefix(line, ">") {
+			addTemp()
 			fmt.Fprintln(&buf, format(`<blockquote>%s</blockquote>`, strings.TrimLeft(line[1:], " ")))
 			continue
 		}
-		if strings.HasPrefix(line, "```") {
-			mono = !mono
-			if mono {
-				fmt.Fprintln(&buf, "<pre>")
-			} else {
-				fmt.Fprint(&buf, "</pre>")
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "=>") {
-			link, err := gemini.ParseLink(line)
-			if err != nil {
-				link = &gemini.Link{URL: "", Name: "Invalid link"}
-			}
-			furl := link.FullURL(url)
-			if strings.HasPrefix(furl, "gemini://") {
-				furl = fmt.Sprintf("?url=%s", furl)
-				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s">%[2]s</a>`,
-					furl, link.Name))
-			} else {
-				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s" target="_blank">%[2]s</a>`, furl, link.Name))
-			}
-			continue
-		}
-		if mono {
-			fmt.Fprint(&buf, format("%s\n", line))
-			continue
-		}
-		fmt.Fprintln(&buf, format(`<span>%s</span>`, line))
+		fmt.Fprintln(&tempBuf, format(`%s`, line))
 	}
-	if mono {
-		fmt.Fprintln(&buf, "</pre>")
-	}
+	addTemp()
 	if pageTitle == "" {
 		pageTitle = url
 	}
@@ -204,7 +223,11 @@ func run() error {
 				errorResponse(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			http.Redirect(w, r, fmt.Sprintf("?url=%s", u), http.StatusMovedPermanently)
+			if u.Scheme == "gemini" {
+				http.Redirect(w, r, fmt.Sprintf("?url=%s", u), http.StatusMovedPermanently)
+			} else {
+				http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
+			}
 		case 4:
 			errorResponse(w, fmt.Sprintf("Temporary failure: %s", resp.Header.Meta), http.StatusServiceUnavailable)
 		case 5:
