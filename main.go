@@ -172,6 +172,7 @@ func run() error {
 	}
 
 	// app := App{Bookmarks: bs, cancelFunc: func() {}}
+	log.Printf("Server started on %s\n", *host)
 	return http.ListenAndServe(*host, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rurl := r.FormValue("url")
 		if rurl == "" {
