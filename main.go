@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -44,7 +45,7 @@ var style = `
 	pre {margin:0}
 	blockquote {font-style:italic;margin:0;padding:0 0 0 10px;display:inline-block;border-left:1px solid grey}
 	.outer {margin: 0 auto; max-width: 600px; padding-top: 20px; overflow-wrap: anywhere;white-space:pre-wrap}
-	pre{color:palegoldenrod}
+	pre{color:palegoldenrod;white-space:pre-wrap}
 `
 
 var homeGemText = `# Gemini Proxy
@@ -71,36 +72,36 @@ func inputForm(prompt, url string) string {
 }
 
 func geminiToHTML(input, url string) string {
-	lines := strings.Split(input, "\n")
 	pageTitle := ""
 	var mono bool
-	for i, line := range lines {
+	var buf bytes.Buffer
+	for _, line := range strings.Split(input, "\n") {
 		line = strings.TrimRight(line, "\r")
 		if !mono && strings.HasPrefix(line, "# ") {
-			lines[i] = format(`<span class="h1">%s</span>`, line)
+			fmt.Fprintln(&buf, format(`<span class="h1">%s</span>`, line))
 			if pageTitle == "" {
 				pageTitle = line[2:]
 			}
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "## ") {
-			lines[i] = format(`<span class="h2">%s</span>`, line)
+			fmt.Fprintln(&buf, format(`<span class="h2">%s</span>`, line))
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "### ") {
-			lines[i] = format(`<span class="h3">%s</span>`, line)
+			fmt.Fprintln(&buf, format(`<span class="h3">%s</span>`, line))
 			continue
 		}
 		if !mono && strings.HasPrefix(line, ">") {
-			lines[i] = format(`<blockquote>%s</blockquote>`, strings.TrimLeft(line[1:], " "))
+			fmt.Fprintln(&buf, format(`<blockquote>%s</blockquote>`, strings.TrimLeft(line[1:], " ")))
 			continue
 		}
 		if strings.HasPrefix(line, "```") {
 			mono = !mono
 			if mono {
-				lines[i] = "<pre>"
+				fmt.Fprintln(&buf, "<pre>")
 			} else {
-				lines[i] = "</pre>"
+				fmt.Fprint(&buf, "</pre>")
 			}
 			continue
 		}
@@ -112,27 +113,27 @@ func geminiToHTML(input, url string) string {
 			furl := link.FullURL(url)
 			if strings.HasPrefix(furl, "gemini://") {
 				furl = fmt.Sprintf("?url=%s", furl)
-				lines[i] = format(`<a href="%[1]s" title="%[1]s">%[2]s</a>`,
-					furl, link.Name)
+				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s">%[2]s</a>`,
+					furl, link.Name))
 			} else {
-				lines[i] = format(`<a href="%[1]s" title="%[1]s" target="_blank">%[2]s</a>`, furl, link.Name)
+				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s" target="_blank">%[2]s</a>`, furl, link.Name))
 			}
 			continue
 		}
 		if mono {
-			lines[i] = format(`%s`, line)
+			fmt.Fprint(&buf, format("%s\n", line))
 			continue
 		}
-		lines[i] = format(`<span>%s</span>`, line)
+		fmt.Fprintln(&buf, format(`<span>%s</span>`, line))
 	}
 	if mono {
-		lines = append(lines, "</pre>")
+		fmt.Fprintln(&buf, "</pre>")
 	}
 	if pageTitle == "" {
 		pageTitle = url
 	}
 	return fmt.Sprintf(outerHTML,
-		pageTitle, style, strings.Join(lines, "\n"))
+		pageTitle, style, buf.String())
 }
 
 func errorResponse(w http.ResponseWriter, msg string, code int) {
