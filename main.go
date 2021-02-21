@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"git.sr.ht/~rafael/gemini-browser/internal/gemini"
-	"github.com/muesli/reflow/wordwrap"
 )
 
 func debugURL(url string) error {
@@ -109,7 +108,7 @@ func geminiToHTML(input, url string) string {
 				link = &gemini.Link{URL: "", Name: "Invalid link"}
 			}
 			furl := link.FullURL(url)
-			name := wordwrap.String(link.Name, columns)
+			name := LineWrap(link.Name, columns)
 			if strings.HasPrefix(furl, "gemini://") {
 				furl = fmt.Sprintf("?url=%s", furl)
 				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s">%[2]s</a>`,
@@ -121,7 +120,7 @@ func geminiToHTML(input, url string) string {
 			continue
 		}
 
-		line = wordwrap.String(strings.TrimRight(line, "\r"), columns)
+		line = LineWrap(strings.TrimRight(line, "\r"), columns)
 		if !mono && strings.HasPrefix(line, "# ") {
 			addTemp()
 			fmt.Fprintln(&buf, format(`<span class="h1">%s</span>`, line))
