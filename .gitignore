@@ -4,3 +4,4 @@
 /configs
 *.swp
 /.vscode
+certs.json
