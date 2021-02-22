@@ -52,10 +52,9 @@ p {padding:0;margin:0}
 .h2 {color: yellow; font-weight: bold}
 .h3 {color: fuchsia; font-weight: bold}
 a {color: cornflowerblue; text-decoration: none}
-pre {margin:0}
 blockquote {font-style:italic;margin:0;padding:0 0 0 10px;display:inline-block;border-left:1px solid grey}
 .outer {margin: 0 auto;width:800px;padding-top: 20px;white-space:pre}
-pre{color:palegoldenrod}
+pre{margin:0;color:palegoldenrod;font-family:'Source Code Pro',monospace}
 `
 
 var homeGemText = `# Gemini Proxy
