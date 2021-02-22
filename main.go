@@ -3,23 +3,31 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	neturl "net/url"
+	"path/filepath"
 	"strings"
 
 	"git.sr.ht/~rafael/gemini-browser/internal/gemini"
 )
 
-func debugURL(url string) error {
+const certsName = "certs.json"
+
+func debugURL(url, cacheDir string, skipVerify bool) error {
 	u, err := neturl.Parse(url)
 	if err != nil {
 		return err
 	}
-	resp, err := gemini.LoadURL(context.Background(), *u)
+	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName))
+	if err != nil {
+		return err
+	}
+	resp, err := client.LoadURL(context.Background(), *u, skipVerify)
 	if err != nil {
 		return err
 	}
@@ -164,11 +172,18 @@ func run() error {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	durl := flag.String("debug", "", "Debug URL")
+	dskip := flag.Bool("debug-skip-verify", false, "Skip cert verification for debug URL")
 	host := flag.String("host", "localhost:8080", "Debug URL")
+	cacheDir := flag.String("cache-dir", "", "Where to store certificate information and other things")
 	flag.Parse()
 
 	if *durl != "" {
-		return debugURL(*durl)
+		return debugURL(*durl, *cacheDir, *dskip)
+	}
+
+	client, err := gemini.NewClient(filepath.Join(*cacheDir, certsName))
+	if err != nil {
+		return err
 	}
 
 	// app := App{Bookmarks: bs, cancelFunc: func() {}}
@@ -190,8 +205,13 @@ func run() error {
 			errorResponse(w, "Invalid URL", http.StatusBadRequest)
 			return
 		}
-		resp, err := gemini.LoadURL(r.Context(), *u)
+		resp, err := client.LoadURL(r.Context(), *u, r.FormValue("force") == "1")
 		if err != nil {
+			if errors.Is(err, gemini.CertChanged) {
+				errorResponse(w, "Certificate has changed. Load with &force=1 to continue with new certificate.",
+					http.StatusInternalServerError)
+				return
+			}
 			log.Print(err)
 			errorResponse(w, "Something went wrong", http.StatusInternalServerError)
 			return
