@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.sr.ht/~rafael/gemini-browser/internal/gemini"
+	"git.sr.ht/~rafael/gemini-browser/gemini"
 )
 
 const certsName = "certs.json"
