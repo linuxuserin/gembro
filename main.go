@@ -63,7 +63,8 @@ var homeGemText = `# Gemini Proxy
 
 => gemini://gemini.circumlunar.space/ Project Gemini
 => gemini://gus.guru/ GUS - Gemini Universal Search
-=> gemini://dioskouroi.xyz/top Gemgohane: GEmini GOpher HAckerNEws Mirror`
+=> gemini://dioskouroi.xyz/top Gemgohane: GEmini GOpher HAckerNEws Mirror
+=> gemini://medusae.space/ medusae.space`
 
 var outerHTML = `<!doctype html><html><head><title>%s</title><style>%s</style></head>` +
 	`<body><div class="outer">%s</div></body></html>`
