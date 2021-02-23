@@ -1,12 +1,8 @@
 package gemini
 
 import (
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,15 +19,17 @@ type CertStore struct {
 	savePath     string
 }
 
+func fingerprint(cert *x509.Certificate) string {
+	hasher := sha256.New()
+	_, _ = hasher.Write(cert.Raw)
+	return fmt.Sprintf("%x", hasher.Sum(nil))
+}
+
 func (cs *CertStore) pin(host string, cert *x509.Certificate) error {
-	data, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
-	if err != nil {
-		return fmt.Errorf("could not marshal pubKey: %w", err)
-	}
 	if cs.Certificates == nil {
 		cs.Certificates = make(map[string]string)
 	}
-	cs.Certificates[host] = base64.StdEncoding.EncodeToString(data)
+	cs.Certificates[host] = fingerprint(cert)
 	return cs.save()
 }
 
@@ -43,29 +41,8 @@ func (cs *CertStore) Check(host string, cert *x509.Certificate, skipVerify bool)
 	if !ok || skipVerify {
 		return cs.pin(host, cert)
 	}
-	s, err := base64.StdEncoding.DecodeString(c)
-	if err != nil {
-		return fmt.Errorf("could not base64 decode cert: %w", err)
-	}
 
-	sPubKey, err := x509.ParsePKIXPublicKey(s)
-	if err != nil {
-		return fmt.Errorf("could not parse saved pubKey: %w", err)
-	}
-
-	var check bool
-	switch sPubKey := sPubKey.(type) {
-	case *rsa.PublicKey:
-		check = sPubKey.Equal(cert.PublicKey.(crypto.PublicKey))
-	case *ecdsa.PublicKey:
-		check = sPubKey.Equal(cert.PublicKey.(crypto.PublicKey))
-	case *ed25519.PublicKey:
-		check = sPubKey.Equal(cert.PublicKey.(crypto.PublicKey))
-	default:
-		return fmt.Errorf("unknown public key")
-	}
-
-	if !check {
+	if c != fingerprint(cert) {
 		return CertChanged
 	}
 	return nil
