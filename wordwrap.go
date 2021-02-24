@@ -13,7 +13,7 @@ func LineWrap(line string, maxlen int) string {
 	var buf, word bytes.Buffer
 	var lineLen, wordLen int
 	for _, r := range line {
-		if wordLen == maxlen {
+		if wordLen >= maxlen {
 			if buf.Len() > 0 {
 				buf.WriteRune('\n')
 			}
@@ -26,15 +26,11 @@ func LineWrap(line string, maxlen int) string {
 		wordLen++
 
 		if r == ' ' || r == '-' || r == softHyphen {
-			if lineLen+wordLen > maxlen {
-				if r == softHyphen {
-					buf.WriteRune('-')
-				}
-				buf.WriteRune('\n')
+			if lineLen+wordLen >= maxlen {
+				buf.WriteString("\n")
 				lineLen = 0
-			} else {
-				lineLen += wordLen
 			}
+			lineLen += wordLen
 			buf.Write(word.Bytes())
 			word.Reset()
 			wordLen = 0
