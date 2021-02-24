@@ -1,272 +1,269 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"html/template"
 	"log"
-	"net/http"
 	neturl "net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"git.sr.ht/~rafael/gemini-browser/gemini"
+	"git.sr.ht/~rafael/gemini-browser/internal/history"
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
 
 const certsName = "certs.json"
+const (
+	startURL     = "gemini://gemini.circumlunar.space/"
+	headerHeight = 1
+	footerHeight = 1
+)
 
-func debugURL(url, cacheDir string, skipVerify bool) error {
-	u, err := neturl.Parse(url)
+func main() {
+	f, err := os.OpenFile("out.log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 	if err != nil {
-		return err
+		panic(err)
 	}
+	defer f.Close()
+	log.SetOutput(f)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	cacheDir := flag.String("cache-dir", "", "Directory to store cache files")
+	flag.Parse()
+
+	if err := run(*cacheDir); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(cacheDir string) error {
+	data, _ := os.ReadFile("spacewalk.gmi")
+
 	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName))
 	if err != nil {
 		return err
 	}
-	resp, err := client.LoadURL(context.Background(), *u, skipVerify)
-	if err != nil {
-		return err
-	}
 
-	fmt.Printf("%#v", resp.Header)
+	ti := textinput.NewModel()
+	ti.Placeholder = ""
+	ti.CharLimit = 156
+	ti.Width = 50
+
+	p := tea.NewProgram(model{
+		mode:    modePage,
+		content: string(data),
+		client:  client,
+		title:   "Home",
+		history: &history.History{},
+		input:   ti,
+	})
+	p.EnterAltScreen()
+	defer p.ExitAltScreen()
+	p.EnableMouseCellMotion()
+	defer p.DisableMouseCellMotion()
+
+	return p.Start()
+}
+
+type mode int
+
+const (
+	modePage mode = iota
+	modeInput
+	modeMessage
+	modeNavigate
+)
+
+type model struct {
+	mode       mode
+	client     *gemini.Client
+	content    string
+	ready      bool
+	viewport   viewport.Model
+	input      textinput.Model
+	title      string
+	links      []linkPos
+	history    *history.History
+	searchURL  string
+	inputQuery string
+	cancel     context.CancelFunc
+}
+
+func (m model) loadURL(url string, addHist bool) func() tea.Msg {
+	return func() tea.Msg {
+		log.Print(url)
+		u, err := neturl.Parse(url)
+		if err != nil {
+			return err
+		}
+		if m.cancel != nil {
+			m.cancel()
+		}
+		var ctx context.Context
+		ctx, m.cancel = context.WithCancel(context.Background())
+		resp, err := m.client.LoadURL(ctx, *u, true)
+		if err != nil {
+			return err
+		}
+		if addHist {
+			m.history.Add(u.String())
+		}
+		return resp
+	}
+}
+
+func (m model) Init() tea.Cmd {
 	return nil
 }
 
-func format(html string, args ...string) string {
-	nargs := make([]interface{}, len(args))
-	for i, arg := range args {
-		nargs[i] = template.HTMLEscapeString(arg)
-	}
-	return fmt.Sprintf(html, nargs...)
-}
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmds []tea.Cmd
+	)
 
-var style = `
-body {background:black;color:white;font-family:'Source Code Pro',
-	monospace;font-size:15px;margin:0}
-p {padding:0;margin:0}
-.h1 {color: red; font-weight: bold}
-.h2 {color: yellow; font-weight: bold}
-.h3 {color: fuchsia; font-weight: bold}
-a {color: cornflowerblue; text-decoration: none}
-blockquote {font-style:italic;margin:0;padding:0 0 0 10px;display:inline-block;border-left:1px solid grey}
-.outer {margin: 0 auto;width:800px;padding-top: 20px;white-space:pre}
-pre{margin:0;color:palegoldenrod;font-family:'Source Code Pro',monospace}
-`
-
-var homeGemText = `# Gemini Proxy
-
-## Useful links
-
-=> gemini://gemini.circumlunar.space/ Project Gemini
-=> gemini://gus.guru/ GUS - Gemini Universal Search
-=> gemini://dioskouroi.xyz/top Gemgohane: GEmini GOpher HAckerNEws Mirror
-=> gemini://medusae.space/ medusae.space`
-
-var outerHTML = `<!doctype html><html><head><title>%s</title><style>%s</style></head>` +
-	`<body><div class="outer">%s</div></body></html>`
-
-var inputFormHTML = `<form action="" method="GET">
-	<input type="hidden" name="url" value="%s">
-	<input id="q" name="q" placeholder="%s" autofocus>
-	<button>Enter</button>
-</form>
-`
-
-func inputForm(prompt, url string) string {
-	html := fmt.Sprintf(outerHTML, "Requesting input", style, format(inputFormHTML, url, prompt))
-	return html
-}
-
-const columns = 80
-
-func geminiToHTML(input, url string) string {
-	pageTitle := ""
-	var mono bool
-	var buf, tempBuf bytes.Buffer
-	addTemp := func() {
-		s := tempBuf.String()
-		if s == "" {
-			return
+	switch msg := msg.(type) {
+	case error:
+		log.Printf("%[1]T %[1]v", msg)
+		m.mode = modeMessage
+		m.inputQuery = msg.Error()
+		return m, nil
+	case tea.KeyMsg:
+		log.Print(msg.String())
+		skey := msg.String()
+		switch m.mode {
+		case modeInput:
+			switch skey {
+			case "enter":
+				m.mode = modePage
+				m.input.Blur()
+				return m, m.loadURL(fmt.Sprintf("%s?%s", m.searchURL, neturl.QueryEscape(m.input.Value())), true)
+			}
+		case modeMessage:
+			switch skey {
+			case "enter":
+				m.mode = modePage
+				m.input.Blur()
+				return m, nil
+			}
+		case modeNavigate:
+			switch skey {
+			case "enter":
+				m.mode = modePage
+				m.input.Blur()
+				return m, m.loadURL(m.input.Value(), true)
+			}
+		case modePage:
+			switch skey {
+			case "g":
+				m.mode = modeNavigate
+				m.input.SetValue("")
+				m.input.Focus()
+				return m, nil
+			case "left":
+				if url, ok := m.history.Back(); ok {
+					return m, m.loadURL(url, false)
+				}
+			case "right":
+				if url, ok := m.history.Forward(); ok {
+					return m, m.loadURL(url, false)
+				}
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			}
 		}
-		if mono {
-			fmt.Fprintf(&buf, "<pre>\n%s</pre>", s)
+	case tea.WindowSizeMsg:
+		verticalMargins := headerHeight + footerHeight
+
+		if !m.ready {
+			m.viewport = viewport.Model{Width: msg.Width, Height: msg.Height - verticalMargins}
+			m.viewport.YPosition = headerHeight
+			m.viewport.HighPerformanceRendering = false
+			cmds = append(cmds, m.loadURL(startURL, true))
+			m.ready = true
 		} else {
-			fmt.Fprintf(&buf, "<p>%s</p>", s)
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - verticalMargins
 		}
-		tempBuf.Reset()
-	}
-	for _, line := range strings.Split(input, "\n") {
-		if strings.HasPrefix(line, "```") {
-			addTemp()
-			mono = !mono
-			continue
-		}
-		if mono {
-			fmt.Fprintln(&tempBuf, format(`%s`, line))
-			continue
-		}
-		if strings.HasPrefix(line, "=>") {
-			addTemp()
-			link, err := gemini.ParseLink(line)
-			if err != nil {
-				link = &gemini.Link{URL: "", Name: "Invalid link"}
-			}
-			furl := link.FullURL(url)
-			name := LineWrap(link.Name, columns)
-			if strings.HasPrefix(furl, "gemini://") {
-				furl = fmt.Sprintf("?url=%s", furl)
-				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s">%[2]s</a>`,
-					furl, name))
-			} else {
-				fmt.Fprintln(&buf, format(`<a href="%[1]s" title="%[1]s" target="_blank">%[2]s</a>`,
-					furl, name))
-			}
-			continue
-		}
-
-		line = LineWrap(strings.TrimRight(line, "\r"), columns)
-		if !mono && strings.HasPrefix(line, "# ") {
-			addTemp()
-			fmt.Fprintln(&buf, format(`<span class="h1">%s</span>`, line))
-			if pageTitle == "" {
-				pageTitle = line[2:]
-			}
-			continue
-		}
-		if !mono && strings.HasPrefix(line, "## ") {
-			addTemp()
-			fmt.Fprintln(&buf, format(`<span class="h2">%s</span>`, line))
-			continue
-		}
-		if !mono && strings.HasPrefix(line, "### ") {
-			addTemp()
-			fmt.Fprintln(&buf, format(`<span class="h3">%s</span>`, line))
-			continue
-		}
-		if !mono && strings.HasPrefix(line, ">") {
-			addTemp()
-			fmt.Fprintln(&buf, format(`<blockquote>%s</blockquote>`, strings.TrimLeft(line[1:], " ")))
-			continue
-		}
-		fmt.Fprintln(&tempBuf, format(`%s`, line))
-	}
-	addTemp()
-	if pageTitle == "" {
-		pageTitle = url
-	}
-	return fmt.Sprintf(outerHTML,
-		pageTitle, style, buf.String())
-}
-
-func errorResponse(w http.ResponseWriter, msg string, code int) {
-	w.WriteHeader(code)
-	w.Header().Set("Content-type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, outerHTML, "Error", style, format("<p>%s</p>", msg))
-}
-
-func run() error {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-	durl := flag.String("debug", "", "Debug URL")
-	dskip := flag.Bool("debug-skip-verify", false, "Skip cert verification for debug URL")
-	host := flag.String("host", "localhost:8080", "Debug URL")
-	cacheDir := flag.String("cache-dir", "", "Where to store certificate information and other things")
-	flag.Parse()
-
-	if *durl != "" {
-		return debugURL(*durl, *cacheDir, *dskip)
-	}
-
-	client, err := gemini.NewClient(filepath.Join(*cacheDir, certsName))
-	if err != nil {
-		return err
-	}
-
-	// app := App{Bookmarks: bs, cancelFunc: func() {}}
-	log.Printf("Server started on %s\n", *host)
-	return http.ListenAndServe(*host, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rurl := r.FormValue("url")
-		if rurl == "" {
-			w.Header().Set("Content-type", "text/html; charset=utf-8")
-			fmt.Fprint(w, geminiToHTML(homeGemText, ""))
-			return
-		}
-		if q := r.FormValue("q"); q != "" {
-			rurl = fmt.Sprintf("%s?%s", rurl, neturl.QueryEscape(q))
-			http.Redirect(w, r, fmt.Sprintf("?url=%s", neturl.QueryEscape(rurl)), http.StatusMovedPermanently)
-			return
-		}
-		u, err := neturl.Parse(rurl)
-		if err != nil {
-			errorResponse(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-		resp, err := client.LoadURL(r.Context(), *u, r.FormValue("force") == "1")
-		if err != nil {
-			if errors.Is(err, gemini.CertChanged) {
-				errorResponse(w, "Certificate has changed. Load with &force=1 to continue with new certificate.",
-					http.StatusInternalServerError)
-				return
-			}
-			log.Print(err)
-			errorResponse(w, "Something went wrong", http.StatusInternalServerError)
-			return
-		}
-		switch resp.Header.Status {
-		case 1:
-			w.Header().Set("Content-type", "text/html; charset=utf-8")
-			fmt.Fprint(w, inputForm(resp.Header.Meta, rurl))
-		case 2:
-			if strings.HasPrefix(resp.Header.Meta, "text/gemini") {
-				b, err := resp.GetBody()
-				if err != nil {
-					errorResponse(w, err.Error(), http.StatusBadRequest)
-					return
+	case tea.MouseMsg:
+		log.Printf("Mouse event: %v", msg)
+		switch msg.Type {
+		case tea.MouseLeft:
+			ypos := m.viewport.YOffset + msg.Y - headerHeight
+			log.Printf("Ypos: %v %v %v", m.viewport.YOffset, msg.Y, ypos)
+			for _, l := range m.links {
+				if l.y == ypos {
+					cmds = append(cmds, m.loadURL(l.url, true))
+					break
 				}
-				if r.FormValue("src") == "1" {
-					fmt.Fprint(w, b)
-					return
-				}
-				w.Header().Set("Content-type", "text/html; charset=utf-8")
-				fmt.Fprint(w, geminiToHTML(b, rurl))
-			} else {
-				w.Header().Set("Content-type", resp.Header.Meta)
-				fmt.Fprint(w, resp.Body)
 			}
-		case 3:
-			u, err := u.Parse(resp.Header.Meta)
-			if err != nil {
-				errorResponse(w, err.Error(), http.StatusBadRequest)
-				return
+		case tea.MouseRight:
+			if url, ok := m.history.Back(); ok {
+				return m, m.loadURL(url, false)
 			}
-			if u.Scheme == "gemini" {
-				http.Redirect(w, r, fmt.Sprintf("?url=%s", u), http.StatusMovedPermanently)
-			} else {
-				http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
-			}
-		case 4:
-			errorResponse(w, fmt.Sprintf("Temporary failure: %s", resp.Header.Meta), http.StatusServiceUnavailable)
-		case 5:
-			if resp.Header.StatusDetail == 1 {
-				errorResponse(w, "Page not found", http.StatusNotFound)
-				return
-			}
-			errorResponse(w, fmt.Sprintf("Permanent failure: %s", resp.Header.Meta), http.StatusServiceUnavailable)
-		case 6:
-			errorResponse(w, fmt.Sprintf("Client certificate required: %s", resp.Header.Meta), http.StatusBadRequest)
+		}
+	case *gemini.Response:
+		switch msg.Header.Status {
 		default:
-			log.Printf("could not parse response for %q: %#v", u.String(), resp)
-			errorResponse(w, "Unknown error", http.StatusTeapot)
+			log.Print(msg.Header)
+		case 1:
+			m.mode = modeInput
+			m.searchURL = msg.URL
+			m.inputQuery = msg.Header.Meta
+			m.input.SetValue("")
+			m.input.Focus()
+		case 4, 5, 6:
+			m.mode = modeMessage
+			m.inputQuery = fmt.Sprintf("Error: %s", msg.Header.Meta)
+			m.input.SetValue("")
+			m.input.Focus()
+		case 2:
+			body, err := msg.GetBody()
+			if err != nil {
+				log.Print(err)
+				return m, nil
+			}
+			u, _ := neturl.Parse(msg.URL)
+			var s string
+			s, m.links, m.title = parseContent(body, m.viewport.Width, *u)
+			m.viewport.SetContent(s)
+			m.viewport.YOffset = 0
+			return m, nil
 		}
-	}))
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	cmds = append(cmds, cmd)
+	m.viewport, _ = m.viewport.Update(msg)
+	return m, tea.Batch(cmds...)
 }
 
-func main() {
-	if err := run(); err != nil {
-		log.Fatal(err)
+func (m model) View() string {
+	switch m.mode {
+	case modeInput:
+		return fmt.Sprintf("%s %s\n\nPress ENTER to continue", m.inputQuery, m.input.View())
+	case modeMessage:
+		return fmt.Sprintf("%s\n\nPress ENTER to continue", m.inputQuery)
+	case modeNavigate:
+		return fmt.Sprintf("Goto %s\n\nPress ENTER to continue", m.input.View())
+	default:
+		if !m.ready {
+			return "\n  Initalizing..."
+		}
+
+		header := m.title + " "
+		header += strings.Repeat("─", m.viewport.Width-runewidth.StringWidth(m.title))
+		footer := fmt.Sprintf(" %3.f%%", m.viewport.ScrollPercent()*100)
+		footerLead := "Back (<-) Forward (->) "
+		gapSize := m.viewport.Width - runewidth.StringWidth(footer) - runewidth.StringWidth(footerLead)
+		footer = footerLead + strings.Repeat("─", gapSize) + footer
+
+		return fmt.Sprintf("%s\n%s\n%s", header, m.viewport.View(), footer)
 	}
 }
