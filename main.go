@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 
 	"git.sr.ht/~rafael/gemini-browser/gemini"
 	"git.sr.ht/~rafael/gemini-browser/internal/history"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -55,6 +57,9 @@ func run(cacheDir, url string) error {
 	ti.CharLimit = 156
 	ti.Width = 50
 
+	s := spinner.NewModel()
+	s.Spinner = spinner.Line
+
 	p := tea.NewProgram(model{
 		mode:     modePage,
 		content:  string(data),
@@ -62,6 +67,7 @@ func run(cacheDir, url string) error {
 		title:    "Home",
 		history:  &history.History{},
 		input:    ti,
+		spinner:  s,
 		startURL: url,
 	})
 	p.EnterAltScreen()
@@ -88,6 +94,7 @@ type model struct {
 	ready      bool
 	viewport   viewport.Model
 	input      textinput.Model
+	spinner    spinner.Model
 	title      string
 	links      []linkPos
 	history    *history.History
@@ -95,7 +102,10 @@ type model struct {
 	inputQuery string
 	cancel     context.CancelFunc
 	startURL   string
+	loading    bool
 }
+
+var loadURLError = errors.New("could not load URL")
 
 func (m model) loadURL(url string, addHist bool) func() tea.Msg {
 	return func() tea.Msg {
@@ -104,6 +114,9 @@ func (m model) loadURL(url string, addHist bool) func() tea.Msg {
 		if err != nil {
 			return err
 		}
+		if u.Scheme != "gemini" {
+			return nil
+		}
 		if m.cancel != nil {
 			m.cancel()
 		}
@@ -111,7 +124,7 @@ func (m model) loadURL(url string, addHist bool) func() tea.Msg {
 		ctx, m.cancel = context.WithCancel(context.Background())
 		resp, err := m.client.LoadURL(ctx, *u, true)
 		if err != nil {
-			return err
+			return loadURLError
 		}
 		if addHist {
 			m.history.Add(u.String())
@@ -121,7 +134,7 @@ func (m model) loadURL(url string, addHist bool) func() tea.Msg {
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return spinner.Tick
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -131,6 +144,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case error:
+		if errors.Is(msg, loadURLError) {
+			m.loading = false
+		}
 		log.Printf("%[1]T %[1]v", msg)
 		m.mode = modeMessage
 		m.inputQuery = msg.Error()
@@ -144,7 +160,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.mode = modePage
 				m.input.Blur()
-				return m, m.loadURL(fmt.Sprintf("%s?%s", m.searchURL, neturl.QueryEscape(m.input.Value())), true)
+				m.loading = true
+				return m, tea.Batch(spinner.Tick, m.loadURL(fmt.Sprintf("%s?%s", m.searchURL, neturl.QueryEscape(m.input.Value())), true))
 			}
 		case modeMessage:
 			switch skey {
@@ -158,7 +175,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.mode = modePage
 				m.input.Blur()
-				return m, m.loadURL(m.input.Value(), true)
+				m.loading = true
+				return m, tea.Batch(spinner.Tick, m.loadURL(m.input.Value(), true))
 			}
 		case modePage:
 			switch skey {
@@ -169,11 +187,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "left":
 				if url, ok := m.history.Back(); ok {
-					return m, m.loadURL(url, false)
+					m.loading = true
+					return m, tea.Batch(spinner.Tick, m.loadURL(url, false))
 				}
 			case "right":
 				if url, ok := m.history.Forward(); ok {
-					return m, m.loadURL(url, false)
+					m.loading = true
+					return m, tea.Batch(spinner.Tick, m.loadURL(url, false))
 				}
 			case "ctrl+c", "q":
 				return m, tea.Quit
@@ -186,7 +206,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport = viewport.Model{Width: msg.Width, Height: msg.Height - verticalMargins}
 			m.viewport.YPosition = headerHeight
 			m.viewport.HighPerformanceRendering = false
-			cmds = append(cmds, m.loadURL(m.startURL, true))
+			m.loading = true
+			cmds = append(cmds, m.loadURL(m.startURL, true), spinner.Tick)
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
@@ -200,16 +221,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			log.Printf("Ypos: %v %v %v", m.viewport.YOffset, msg.Y, ypos)
 			for _, l := range m.links {
 				if l.y == ypos {
-					cmds = append(cmds, m.loadURL(l.url, true))
+					m.loading = true
+					cmds = append(cmds, m.loadURL(l.url, true), spinner.Tick)
 					break
 				}
 			}
 		case tea.MouseRight:
 			if url, ok := m.history.Back(); ok {
-				return m, m.loadURL(url, false)
+				m.loading = true
+				return m, tea.Batch(m.loadURL(url, false), spinner.Tick)
 			}
 		}
 	case *gemini.Response:
+		m.loading = false
 		switch msg.Header.Status {
 		default:
 			log.Print(msg.Header)
@@ -234,12 +258,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var s string
 			s, m.links, m.title = parseContent(body, m.viewport.Width, *u)
 			m.viewport.SetContent(s)
-			m.viewport.YOffset = 0
+			m.viewport.GotoTop()
 			return m, nil
 		}
 	}
 
 	var cmd tea.Cmd
+	if m.loading {
+		m.spinner, cmd = m.spinner.Update(msg)
+		cmds = append(cmds, cmd)
+	}
 	m.input, cmd = m.input.Update(msg)
 	cmds = append(cmds, cmd)
 	m.viewport, _ = m.viewport.Update(msg)
@@ -259,10 +287,12 @@ func (m model) View() string {
 			return "\n  Initalizing..."
 		}
 
-		header := m.title + " "
-		header += strings.Repeat("─", m.viewport.Width-runewidth.StringWidth(m.title))
+		header := m.title
+		if m.loading {
+			header += fmt.Sprintf(" :: %s", m.spinner.View())
+		}
 		footer := fmt.Sprintf(" %3.f%%", m.viewport.ScrollPercent()*100)
-		footerLead := "Back (<-) Forward (->) "
+		footerLead := "Back (RMB) Forward (->) "
 		gapSize := m.viewport.Width - runewidth.StringWidth(footer) - runewidth.StringWidth(footerLead)
 		footer = footerLead + strings.Repeat("─", gapSize) + footer
 
