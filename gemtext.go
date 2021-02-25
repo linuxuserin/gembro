@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"git.sr.ht/~rafael/gemini-browser/gemini"
-	"github.com/muesli/reflow/wordwrap"
 	"github.com/muesli/termenv"
 )
 
@@ -75,7 +74,7 @@ func parseContent(data string, width int, baseURL neturl.URL) (content string, l
 			continue
 		}
 
-		sl := wordwrap.String(line, width)
+		sl := LineWrap(line, width)
 		fmt.Fprintln(&s, sl)
 		ypos += strings.Count(sl, "\n") + 1
 	}

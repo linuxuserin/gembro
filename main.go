@@ -20,7 +20,6 @@ import (
 
 const certsName = "certs.json"
 const (
-	startURL     = "gemini://gemini.circumlunar.space/"
 	headerHeight = 1
 	footerHeight = 1
 )
@@ -35,14 +34,15 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	cacheDir := flag.String("cache-dir", "", "Directory to store cache files")
+	url := flag.String("url", "", "URL to start with")
 	flag.Parse()
 
-	if err := run(*cacheDir); err != nil {
+	if err := run(*cacheDir, *url); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(cacheDir string) error {
+func run(cacheDir, url string) error {
 	data, _ := os.ReadFile("spacewalk.gmi")
 
 	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName))
@@ -56,12 +56,13 @@ func run(cacheDir string) error {
 	ti.Width = 50
 
 	p := tea.NewProgram(model{
-		mode:    modePage,
-		content: string(data),
-		client:  client,
-		title:   "Home",
-		history: &history.History{},
-		input:   ti,
+		mode:     modePage,
+		content:  string(data),
+		client:   client,
+		title:    "Home",
+		history:  &history.History{},
+		input:    ti,
+		startURL: url,
 	})
 	p.EnterAltScreen()
 	defer p.ExitAltScreen()
@@ -93,6 +94,7 @@ type model struct {
 	searchURL  string
 	inputQuery string
 	cancel     context.CancelFunc
+	startURL   string
 }
 
 func (m model) loadURL(url string, addHist bool) func() tea.Msg {
@@ -184,7 +186,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport = viewport.Model{Width: msg.Width, Height: msg.Height - verticalMargins}
 			m.viewport.YPosition = headerHeight
 			m.viewport.HighPerformanceRendering = false
-			cmds = append(cmds, m.loadURL(startURL, true))
+			cmds = append(cmds, m.loadURL(m.startURL, true))
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
