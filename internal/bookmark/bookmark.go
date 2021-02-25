@@ -12,20 +12,20 @@ type Bookmark struct {
 	Name string `json:"name"`
 }
 
-type BookmarkStore struct {
+type Store struct {
 	sync.Mutex
 	bookmarks []Bookmark
 	path      string
 }
 
-func (bs *BookmarkStore) Add(surl, name string) error {
+func (bs *Store) Add(surl, name string) error {
 	bs.Lock()
 	defer bs.Unlock()
 	bs.bookmarks = append(bs.bookmarks, Bookmark{surl, name})
 	return bs.save()
 }
 
-func (bs *BookmarkStore) Remove(surl string) error {
+func (bs *Store) Remove(surl string) error {
 	bs.Lock()
 	defer bs.Unlock()
 	var newb []Bookmark
@@ -38,7 +38,7 @@ func (bs *BookmarkStore) Remove(surl string) error {
 	return bs.save()
 }
 
-func (bs *BookmarkStore) Contains(surl string) bool {
+func (bs *Store) Contains(surl string) bool {
 	bs.Lock()
 	defer bs.Unlock()
 	for _, b := range bs.bookmarks {
@@ -49,7 +49,7 @@ func (bs *BookmarkStore) Contains(surl string) bool {
 	return false
 }
 
-func (bs *BookmarkStore) All() []Bookmark {
+func (bs *Store) All() []Bookmark {
 	return bs.bookmarks
 }
 
@@ -57,7 +57,7 @@ type jsonBookmarks struct {
 	Bookmarks []Bookmark `json:"bookmarks"`
 }
 
-func (bs *BookmarkStore) save() error {
+func (bs *Store) save() error {
 	f, err := os.Create(bs.path)
 	if err != nil {
 		return fmt.Errorf("could not save bookmarks: %w", err)
@@ -70,11 +70,11 @@ func (bs *BookmarkStore) save() error {
 	return nil
 }
 
-func Load(path string) (*BookmarkStore, error) {
+func Load(path string) (*Store, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &BookmarkStore{path: path}, nil
+			return &Store{path: path}, nil
 		}
 		return nil, fmt.Errorf("could not open bookmarks file: %w", err)
 	}
@@ -82,7 +82,7 @@ func Load(path string) (*BookmarkStore, error) {
 	if err := json.NewDecoder(f).Decode(&bookmarks); err != nil {
 		return nil, fmt.Errorf("could not decode bookmarks: %w", err)
 	}
-	return &BookmarkStore{
+	return &Store{
 		path:      path,
 		bookmarks: bookmarks.Bookmarks,
 	}, nil
