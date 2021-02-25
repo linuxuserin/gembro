@@ -5,3 +5,4 @@
 *.swp
 /.vscode
 certs.json
+/out.log
