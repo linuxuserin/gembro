@@ -6,24 +6,32 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type CloseMessageEvent struct{}
+type CloseMessageEvent struct {
+	Response bool
+	Type     int
+}
 
 type Message struct {
-	Message string
+	Message     string
+	Type        int
+	WithConfirm bool
 }
 
 func (m Message) Update(msg tea.Msg) (Message, tea.Cmd) {
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter", "q":
-			cmds = append(cmds, fireEvent(CloseMessageEvent{}))
+		switch skey := msg.String(); skey {
+		case "y", "n", "enter", "q":
+			cmds = append(cmds, fireEvent(CloseMessageEvent{Response: skey == "y", Type: m.Type}))
 		}
 	}
 	return m, tea.Batch(cmds...)
 }
 
 func (m Message) View() string {
+	if m.WithConfirm {
+		return fmt.Sprintf("%s\n\n(Y)es or (N)o", m.Message)
+	}
 	return fmt.Sprintf("%s\n\nPress ENTER or q to continue", m.Message)
 }

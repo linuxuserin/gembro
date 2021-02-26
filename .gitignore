@@ -6,3 +6,4 @@
 /.vscode
 certs.json
 /out.log
+/gemini-browser

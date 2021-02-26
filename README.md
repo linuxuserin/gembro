@@ -13,3 +13,5 @@ go build -o gemini-browser
 
 - Resume session
 - Bookmark delete confirmation
+- Handle other media types (than text/gemini) (again)
+- View source

@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -64,6 +65,7 @@ type Response struct {
 	Body   string
 	Header Header
 	URL    string
+	Source []byte
 }
 
 type Client struct {
@@ -110,13 +112,14 @@ func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool
 		return nil, fmt.Errorf("could not send url: %w", err)
 	}
 
-	rdr := bufio.NewReader(io.LimitReader(conn, 1024*1024))
+	var buf bytes.Buffer
+	rdr := bufio.NewReader(io.TeeReader(io.LimitReader(conn, 1024*1024), &buf))
 	header, err := readHeader(rdr)
 	if err != nil {
 		return nil, err
 	}
 
-	resp := &Response{Header: *header, URL: surl.String()}
+	resp := &Response{Header: *header, URL: surl.String(), Source: buf.Bytes()}
 	switch header.Status {
 	case 1: // input
 		return resp, nil
