@@ -12,6 +12,4 @@ go build -o gemini-browser
 ## Todo
 
 - Resume session
-- Bookmark delete confirmation
 - Handle other media types (than text/gemini) (again)
-- View source
