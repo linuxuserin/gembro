@@ -1,6 +1,6 @@
 # Gemini Browser
 
-A mouse-driver CLI Gemini client
+A mouse-driven CLI Gemini client
 
 ## Run
 
