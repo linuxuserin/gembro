@@ -19,23 +19,22 @@ import (
 )
 
 type Tab struct {
-	mode       mode
-	inputQuery string
-	title      string
-	Name       string
-	startURL   string
-	searchURL  string
-	ready      bool
-	loading    bool
-	input      textinput.Model
-	spinner    spinner.Model
-	viewport   viewport.Model
-	client     *gemini.Client
-	cancel     context.CancelFunc
-	history    *history.History
-	bookmarks  *bookmark.Store
-	links      []linkPos
-	lastEvent  tea.MouseEventType
+	mode      mode
+	title     string
+	startURL  string
+	searchURL string
+	ready     bool
+	loading   bool
+	input     Input
+	message   Message
+	spinner   spinner.Model
+	viewport  viewport.Model
+	client    *gemini.Client
+	cancel    context.CancelFunc
+	history   *history.History
+	bookmarks *bookmark.Store
+	links     []linkPos
+	lastEvent tea.MouseEventType
 }
 
 func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
@@ -52,7 +51,8 @@ func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
 		client:    client,
 		title:     "Home",
 		history:   &history.History{},
-		input:     ti,
+		input:     NewInput(),
+		message:   Message{},
 		spinner:   s,
 		startURL:  startURL,
 		bookmarks: bs,
@@ -68,49 +68,40 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		log.Printf("%[1]T %[1]v", msg)
 		var le *LoadError
 		if errors.As(msg, &le) {
+			log.Print(le.Unwrap())
 			tab.loading = false
 		}
 		if errors.Is(msg, context.Canceled) {
 			return tab, nil
 		}
 		tab.mode = modeMessage
-		tab.inputQuery = msg.Error()
+		tab.message.Message = msg.Error()
 		return tab, nil
+	case CloseMessageEvent, CloseInputEvent:
+		tab.mode = modePage
+	case InputEvent:
+		tab.mode = modePage
+		switch msg.Type {
+		case "input":
+			url := fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(msg.Value))
+			cmd, tab.loading, tab.cancel = tab.loadURL(url, true)
+			return tab, tea.Batch(cmd, spinner.Tick)
+		case "navigate":
+			cmd, tab.loading, tab.cancel = tab.loadURL(msg.Value, true)
+			return tab, tea.Batch(cmd, spinner.Tick)
+		}
+
 	case tea.KeyMsg:
 		log.Print(msg.String())
 		skey := msg.String()
 		switch tab.mode {
-		case modeInput:
-			switch skey {
-			case "enter":
-				tab.mode = modePage
-				tab.input.Blur()
-				tab.loading = true
-				url := fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(tab.input.Value()))
-				cmd, tab.loading, tab.cancel = tab.loadURL(url, true)
-				return tab, tea.Batch(cmd, spinner.Tick)
-			}
-		case modeMessage:
-			switch skey {
-			case "enter":
-				tab.mode = modePage
-				tab.input.Blur()
-				return tab, nil
-			}
-		case modeNavigate:
-			switch skey {
-			case "enter":
-				tab.mode = modePage
-				tab.input.Blur()
-				cmd, tab.loading, tab.cancel = tab.loadURL(tab.input.Value(), true)
-				return tab, tea.Batch(cmd, spinner.Tick)
-			}
 		case modePage:
 			switch skey {
+			case "q":
+				return tab, fireEvent(CloseCurrentTabEvent{})
 			case "g":
 				tab.mode = modeNavigate
-				tab.input.SetValue("")
-				tab.input.Focus()
+				tab.input = tab.input.Show("Go to", "navigate")
 				return tab, nil
 			case "left":
 				if url, ok := tab.history.Back(); ok {
@@ -122,8 +113,6 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 					cmd, tab.loading, tab.cancel = tab.loadURL(url, false)
 					return tab, tea.Batch(cmd, spinner.Tick)
 				}
-			case "ctrl+c", "q":
-				return tab, tea.Quit
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -146,7 +135,8 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			tab.viewport.Height = msg.Height - verticalMargins
 		}
 	case tea.MouseMsg:
-		return tab.handleMouse(msg)
+		tab, cmd = tab.handleMouse(msg)
+		cmds = append(cmds, cmd)
 	case *gemini.Response:
 		tab.loading = false
 		switch msg.Header.Status {
@@ -155,14 +145,10 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		case 1:
 			tab.mode = modeInput
 			tab.searchURL = msg.URL
-			tab.inputQuery = msg.Header.Meta
-			tab.input.SetValue("")
-			tab.input.Focus()
+			tab.input = tab.input.Show(msg.Header.Meta, "input")
 		case 4, 5, 6:
 			tab.mode = modeMessage
-			tab.inputQuery = fmt.Sprintf("Error: %s", msg.Header.Meta)
-			tab.input.SetValue("")
-			tab.input.Focus()
+			tab.message.Message = fmt.Sprintf("Error: %s", msg.Header.Meta)
 		case 2:
 			body, err := msg.GetBody()
 			if err != nil {
@@ -178,13 +164,21 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		}
 	}
 
+	switch tab.mode {
+	case modeInput, modeNavigate:
+		tab.input, cmd = tab.input.Update(msg)
+		cmds = append(cmds, cmd)
+	case modeMessage:
+		tab.message, cmd = tab.message.Update(msg)
+		cmds = append(cmds, cmd)
+	case modePage:
+		tab.viewport, _ = tab.viewport.Update(msg)
+	}
+
 	if tab.loading {
 		tab.spinner, cmd = tab.spinner.Update(msg)
 		cmds = append(cmds, cmd)
 	}
-	tab.input, cmd = tab.input.Update(msg)
-	cmds = append(cmds, cmd)
-	tab.viewport, _ = tab.viewport.Update(msg)
 	return tab, tea.Batch(cmds...)
 }
 
@@ -238,12 +232,10 @@ func (tab Tab) handleMouse(msg tea.MouseMsg) (Tab, tea.Cmd) {
 
 func (tab Tab) View() string {
 	switch tab.mode {
-	case modeInput:
-		return fmt.Sprintf("%s %s\n\nPress ENTER to continue", tab.inputQuery, tab.input.View())
+	case modeInput, modeNavigate:
+		return tab.input.View()
 	case modeMessage:
-		return fmt.Sprintf("%s\n\nPress ENTER to continue", tab.inputQuery)
-	case modeNavigate:
-		return fmt.Sprintf("Goto %s\n\nPress ENTER to continue", tab.input.View())
+		return tab.message.View()
 	default:
 		if !tab.ready {
 			return "\n  Initalizing..."
@@ -315,6 +307,9 @@ func (tab Tab) loadURL(url string, addHist bool) (func() tea.Msg, bool, context.
 			tab.cancel()
 		}
 		resp, err := tab.client.LoadURL(ctx, *u, true)
+		if err := ctx.Err(); err != nil {
+			return &LoadError{err: err, message: "Could not load URL"}
+		}
 		if err != nil {
 			return &LoadError{err: err, message: "Could not load URL"}
 		}

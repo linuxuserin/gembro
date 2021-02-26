@@ -34,6 +34,7 @@ type SelectTabEvent struct {
 	Tab int
 }
 
+type CloseCurrentTabEvent struct{}
 type CloseTabEvent struct {
 	Tab int
 }
@@ -114,8 +115,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastWindowMsg = msg
 	case tea.KeyMsg:
 		keys := msg.String()
-		if keys == "q" {
-			return m, fireEvent(CloseTabEvent{Tab: m.currentTab})
+		switch keys {
+		case "ctrl+c":
+			return m, tea.Quit
 		}
 		var num int
 		n, _ := fmt.Sscanf(keys, "alt+%d", &num)
@@ -133,6 +135,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tabs = append(m.tabs, NewTab(m.client, msg.URL, m.bookmarks))
 			return m, cmd
 		}
+	case CloseCurrentTabEvent:
+		return m, fireEvent(CloseTabEvent{Tab: m.currentTab})
 	case CloseTabEvent:
 		if msg.Tab < len(m.tabs) && len(m.tabs) > 1 {
 			m.tabs = append(m.tabs[0:msg.Tab], m.tabs[msg.Tab+1:]...)
