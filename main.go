@@ -30,6 +30,18 @@ var builtinBookmarks = []bookmark.Bookmark{
 	{URL: "gemini://medusae.space/", Name: "A gemini directory"},
 }
 
+type SelectTabEvent struct {
+	Tab int
+}
+
+type CloseTabEvent struct {
+	Tab int
+}
+
+type OpenNewTabEvent struct {
+	URL string
+}
+
 func main() {
 	f, err := os.OpenFile("out.log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 	if err != nil {
@@ -101,21 +113,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.lastWindowMsg = msg
 	case tea.KeyMsg:
+		keys := msg.String()
+		if keys == "q" {
+			return m, fireEvent(CloseTabEvent{Tab: m.currentTab})
+		}
 		var num int
-		n, _ := fmt.Sscanf(msg.String(), "alt+%d", &num)
+		n, _ := fmt.Sscanf(keys, "alt+%d", &num)
 		if n == 1 && 1 <= num && num <= 9 {
 			if num <= len(m.tabs) {
-				m.currentTab = num - 1
-				m.tabs[m.currentTab], cmd = m.tabs[m.currentTab].Update(m.lastWindowMsg)
-				return m, cmd
+				return m.selectTab(num - 1)
 			}
 			if len(m.tabs) < 9 {
 				m.tabs = append(m.tabs, NewTab(m.client, "", m.bookmarks))
-				m.currentTab = len(m.tabs) - 1
-				m.tabs[m.currentTab], cmd = m.tabs[m.currentTab].Update(m.lastWindowMsg)
-				return m, cmd
+				return m.selectTab(len(m.tabs) - 1)
 			}
 		}
+	case OpenNewTabEvent:
+		if len(m.tabs) < 9 {
+			m.tabs = append(m.tabs, NewTab(m.client, msg.URL, m.bookmarks))
+			return m, cmd
+		}
+	case CloseTabEvent:
+		if msg.Tab < len(m.tabs) && len(m.tabs) > 1 {
+			m.tabs = append(m.tabs[0:msg.Tab], m.tabs[msg.Tab+1:]...)
+			for m.currentTab >= len(m.tabs) {
+				m.currentTab--
+			}
+			return m.selectTab(m.currentTab)
+		}
+	case SelectTabEvent:
+		return m.selectTab(msg.Tab)
 	}
 	m.tabs[m.currentTab], cmd = m.tabs[m.currentTab].Update(msg)
 	return m, cmd
@@ -132,4 +159,20 @@ func (m model) View() string {
 	}
 	fmt.Fprintf(&buf, "\n%s", m.tabs[m.currentTab].View())
 	return buf.String()
+}
+
+func (m model) selectTab(tab int) (model, tea.Cmd) {
+	if tab < len(m.tabs) {
+		m.currentTab = tab
+		var cmd tea.Cmd
+		m.tabs[m.currentTab], cmd = m.tabs[m.currentTab].Update(m.lastWindowMsg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func fireEvent(msg tea.Msg) func() tea.Msg {
+	return func() tea.Msg {
+		return msg
+	}
 }

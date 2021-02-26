@@ -35,6 +35,7 @@ type Tab struct {
 	history    *history.History
 	bookmarks  *bookmark.Store
 	links      []linkPos
+	lastEvent  tea.MouseEventType
 }
 
 func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
@@ -44,7 +45,7 @@ func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
 	ti.Width = 50
 
 	s := spinner.NewModel()
-	s.Spinner = spinner.Line
+	s.Spinner = spinner.Points
 
 	return Tab{
 		mode:      modePage,
@@ -59,14 +60,19 @@ func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
 }
 
 func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
+	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case error:
-		if errors.Is(msg, loadURLError) {
+		log.Printf("%[1]T %[1]v", msg)
+		var le *LoadError
+		if errors.As(msg, &le) {
 			tab.loading = false
 		}
-		log.Printf("%[1]T %[1]v", msg)
+		if errors.Is(msg, context.Canceled) {
+			return tab, nil
+		}
 		tab.mode = modeMessage
 		tab.inputQuery = msg.Error()
 		return tab, nil
@@ -80,7 +86,9 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				tab.mode = modePage
 				tab.input.Blur()
 				tab.loading = true
-				return tab, tea.Batch(spinner.Tick, tab.loadURL(fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(tab.input.Value())), true))
+				url := fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(tab.input.Value()))
+				cmd, tab.loading, tab.cancel = tab.loadURL(url, true)
+				return tab, tea.Batch(cmd, spinner.Tick)
 			}
 		case modeMessage:
 			switch skey {
@@ -94,8 +102,8 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			case "enter":
 				tab.mode = modePage
 				tab.input.Blur()
-				tab.loading = true
-				return tab, tea.Batch(spinner.Tick, tab.loadURL(tab.input.Value(), true))
+				cmd, tab.loading, tab.cancel = tab.loadURL(tab.input.Value(), true)
+				return tab, tea.Batch(cmd, spinner.Tick)
 			}
 		case modePage:
 			switch skey {
@@ -106,13 +114,13 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				return tab, nil
 			case "left":
 				if url, ok := tab.history.Back(); ok {
-					tab.loading = true
-					return tab, tea.Batch(spinner.Tick, tab.loadURL(url, false))
+					cmd, tab.loading, tab.cancel = tab.loadURL(url, false)
+					return tab, tea.Batch(cmd, spinner.Tick)
 				}
 			case "right":
 				if url, ok := tab.history.Forward(); ok {
-					tab.loading = true
-					return tab, tea.Batch(spinner.Tick, tab.loadURL(url, false))
+					cmd, tab.loading, tab.cancel = tab.loadURL(url, false)
+					return tab, tea.Batch(cmd, spinner.Tick)
 				}
 			case "ctrl+c", "q":
 				return tab, tea.Quit
@@ -131,31 +139,14 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			if startURL == "" {
 				startURL = "home://"
 			}
-			tab.loading = true
-			cmds = append(cmds, tab.loadURL(startURL, true), spinner.Tick)
+			cmd, tab.loading, tab.cancel = tab.loadURL(startURL, true)
+			cmds = append(cmds, cmd, spinner.Tick)
 		} else {
 			tab.viewport.Width = msg.Width
 			tab.viewport.Height = msg.Height - verticalMargins
 		}
 	case tea.MouseMsg:
-		log.Printf("Mouse event: %v", msg)
-		switch msg.Type {
-		case tea.MouseLeft:
-			ypos := tab.viewport.YOffset + msg.Y - headerHeight
-			log.Printf("Ypos: %v %v %v", tab.viewport.YOffset, msg.Y, ypos)
-			for _, l := range tab.links {
-				if l.y == ypos {
-					tab.loading = true
-					cmds = append(cmds, tab.loadURL(l.url, true), spinner.Tick)
-					break
-				}
-			}
-		case tea.MouseRight:
-			if url, ok := tab.history.Back(); ok {
-				tab.loading = true
-				return tab, tea.Batch(tab.loadURL(url, false), spinner.Tick)
-			}
-		}
+		return tab.handleMouse(msg)
 	case *gemini.Response:
 		tab.loading = false
 		switch msg.Header.Status {
@@ -187,7 +178,6 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		}
 	}
 
-	var cmd tea.Cmd
 	if tab.loading {
 		tab.spinner, cmd = tab.spinner.Update(msg)
 		cmds = append(cmds, cmd)
@@ -195,6 +185,54 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	tab.input, cmd = tab.input.Update(msg)
 	cmds = append(cmds, cmd)
 	tab.viewport, _ = tab.viewport.Update(msg)
+	return tab, tea.Batch(cmds...)
+}
+
+func (tab Tab) findLinkY(y int) *linkPos {
+	for _, l := range tab.links {
+		if l.y == y {
+			return &l
+		}
+	}
+	return nil
+}
+
+func (tab Tab) handleMouse(msg tea.MouseMsg) (Tab, tea.Cmd) {
+	log.Printf("Mouse event: %v", msg)
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+
+	switch msg.Type {
+	case tea.MouseLeft, tea.MouseMiddle, tea.MouseRight:
+		tab.lastEvent = msg.Type
+	case tea.MouseRelease:
+		switch tab.lastEvent {
+		case tea.MouseLeft, tea.MouseMiddle:
+			if msg.Y == 0 {
+				sel := msg.X / 4
+				if tab.lastEvent == tea.MouseMiddle {
+					return tab, fireEvent(CloseTabEvent{Tab: sel})
+				} else {
+					return tab, fireEvent(SelectTabEvent{Tab: sel})
+				}
+			}
+			ypos := tab.viewport.YOffset + msg.Y - headerHeight
+			if link := tab.findLinkY(ypos); link != nil {
+				if tab.lastEvent == tea.MouseMiddle {
+					cmd = fireEvent(OpenNewTabEvent{URL: link.url})
+					cmds = append(cmds, cmd)
+				} else {
+					cmd, tab.loading, tab.cancel = tab.loadURL(link.url, true)
+					cmds = append(cmds, cmd, spinner.Tick)
+				}
+			}
+		case tea.MouseRight:
+			if url, ok := tab.history.Back(); ok {
+				cmd, tab.loading, tab.cancel = tab.loadURL(url, false)
+				return tab, tea.Batch(cmd, spinner.Tick)
+			}
+		}
+	}
 	return tab, tea.Batch(cmds...)
 }
 
@@ -216,7 +254,7 @@ func (tab Tab) View() string {
 			header += fmt.Sprintf(" :: %s", tab.spinner.View())
 		}
 		footer := fmt.Sprintf(" %3.f%%", tab.viewport.ScrollPercent()*100)
-		footerLead := "Back (RMB) Forward (->) "
+		footerLead := "Back (RMB) Forward (->) Close tab (q) "
 		gapSize := tab.viewport.Width - runewidth.StringWidth(footer) - runewidth.StringWidth(footerLead)
 		footer = footerLead + strings.Repeat("─", gapSize) + footer
 
@@ -238,9 +276,26 @@ func (tab Tab) homeContent() string {
 	return buf.String()
 }
 
-var loadURLError = errors.New("could not load URL")
+type LoadError struct {
+	err     error
+	message string
+}
 
-func (tab Tab) loadURL(url string, addHist bool) func() tea.Msg {
+func (le *LoadError) Unwrap() error {
+	return le.err
+}
+
+func (le *LoadError) Error() string {
+	if le.err != nil {
+		return fmt.Sprintf("%s: %s", le.message, le.err.Error())
+	}
+	return le.message
+}
+
+func (tab Tab) loadURL(url string, addHist bool) (func() tea.Msg, bool, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	loading := true
+
 	return func() tea.Msg {
 		log.Print(url)
 		u, err := neturl.Parse(url)
@@ -254,20 +309,18 @@ func (tab Tab) loadURL(url string, addHist bool) func() tea.Msg {
 			return &gemini.Response{Body: tab.homeContent(), URL: url, Header: gemini.Header{Status: 2, Meta: ""}}
 		}
 		if u.Scheme != "gemini" {
-			return loadURLError
+			return &LoadError{err: nil, message: "Incorrect protocol"}
 		}
 		if tab.cancel != nil {
 			tab.cancel()
 		}
-		var ctx context.Context
-		ctx, tab.cancel = context.WithCancel(context.Background())
 		resp, err := tab.client.LoadURL(ctx, *u, true)
 		if err != nil {
-			return loadURLError
+			return &LoadError{err: err, message: "Could not load URL"}
 		}
 		if addHist {
 			tab.history.Add(u.String())
 		}
 		return resp
-	}
+	}, loading, cancel
 }
