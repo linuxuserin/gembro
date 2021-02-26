@@ -43,3 +43,7 @@ func LineWrap(line string, maxlen int) string {
 	buf.Write(word.Bytes())
 	return buf.String()
 }
+
+func RuneCount(s string) int {
+	return len([]rune(s))
+}

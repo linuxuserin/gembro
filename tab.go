@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 const (
@@ -271,8 +270,8 @@ func (tab Tab) View() string {
 			header += fmt.Sprintf(" :: %s", tab.spinner.View())
 		}
 		footer := fmt.Sprintf(" %3.f%%", tab.viewport.ScrollPercent()*100)
-		footerLead := "Back (RMB) Forward (->) Close tab (q) "
-		gapSize := tab.viewport.Width - runewidth.StringWidth(footer) - runewidth.StringWidth(footerLead)
+		footerLead := "Back (RMB) Forward (->) Close tab (q) Quit (ctrl+c) "
+		gapSize := tab.viewport.Width - RuneCount(footer) - RuneCount(footerLead)
 		footer = footerLead + strings.Repeat("─", gapSize) + footer
 
 		return fmt.Sprintf("%s\n%s\n%s", header, tab.viewport.View(), footer)
