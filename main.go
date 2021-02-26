@@ -40,7 +40,8 @@ type CloseTabEvent struct {
 }
 
 type OpenNewTabEvent struct {
-	URL string
+	URL    string
+	Switch bool
 }
 
 func main() {
@@ -118,22 +119,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		}
-		var num int
-		n, _ := fmt.Sscanf(keys, "alt+%d", &num)
-		if n == 1 && 1 <= num && num <= 9 {
+		if msg.Alt && len(msg.Runes) == 1 && '1' <= msg.Runes[0] && msg.Runes[0] <= '9' {
+			num := int(msg.Runes[0] - '0')
 			if num <= len(m.tabs) {
 				return m.selectTab(num - 1)
 			}
 			if len(m.tabs) < 9 {
-				m.tabs = append(m.tabs, NewTab(m.client, "", m.bookmarks))
-				return m.selectTab(len(m.tabs) - 1)
+				return m.openNewTab("", true)
 			}
 		}
 	case OpenNewTabEvent:
-		if len(m.tabs) < 9 {
-			m.tabs = append(m.tabs, NewTab(m.client, msg.URL, m.bookmarks))
-			return m, cmd
-		}
+		return m.openNewTab(msg.URL, msg.Switch)
 	case CloseCurrentTabEvent:
 		return m, fireEvent(CloseTabEvent{Tab: m.currentTab})
 	case CloseTabEvent:
@@ -162,6 +158,17 @@ func (m model) View() string {
 	}
 	fmt.Fprintf(&buf, "\n%s", m.tabs[m.currentTab].View())
 	return buf.String()
+}
+
+func (m model) openNewTab(url string, switchTo bool) (model, tea.Cmd) {
+	var cmd tea.Cmd
+	if len(m.tabs) < 9 {
+		m.tabs = append(m.tabs, NewTab(m.client, url, m.bookmarks))
+		if switchTo {
+			cmd = fireEvent(SelectTabEvent{Tab: len(m.tabs) - 1})
+		}
+	}
+	return m, cmd
 }
 
 func (m model) selectTab(tab int) (model, tea.Cmd) {
