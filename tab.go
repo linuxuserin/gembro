@@ -18,10 +18,17 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
+const (
+	inputNav = iota
+	inputQuery
+	inputBookmark
+)
+
 type Tab struct {
 	mode      mode
 	title     string
 	startURL  string
+	URL       string
 	searchURL string
 	ready     bool
 	loading   bool
@@ -82,13 +89,17 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	case InputEvent:
 		tab.mode = modePage
 		switch msg.Type {
-		case "input":
+		case inputQuery:
 			url := fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(msg.Value))
 			cmd, tab.loading, tab.cancel = tab.loadURL(url, true)
 			return tab, tea.Batch(cmd, spinner.Tick)
-		case "navigate":
+		case inputNav:
 			cmd, tab.loading, tab.cancel = tab.loadURL(msg.Value, true)
 			return tab, tea.Batch(cmd, spinner.Tick)
+		case inputBookmark:
+			if err := tab.bookmarks.Add(tab.URL, msg.Value); err != nil {
+				log.Print(err)
+			}
 		}
 
 	case tea.KeyMsg:
@@ -100,8 +111,21 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			case "q":
 				return tab, fireEvent(CloseCurrentTabEvent{})
 			case "g":
-				tab.mode = modeNavigate
-				tab.input = tab.input.Show("Go to", "navigate")
+				tab.mode = modeInput
+				tab.input = tab.input.Show("Go to", "", inputNav)
+				return tab, nil
+			case "h":
+				cmd, tab.loading, tab.cancel = tab.loadURL("home://", true)
+				return tab, tea.Batch(cmd, spinner.Tick)
+			case "b":
+				if tab.bookmarks.Contains(tab.URL) {
+					if err := tab.bookmarks.Remove(tab.URL); err != nil {
+						log.Print(err)
+					}
+					return tab, nil
+				}
+				tab.mode = modeInput
+				tab.input = tab.input.Show("Name", tab.title, inputBookmark)
 				return tab, nil
 			case "left":
 				if url, ok := tab.history.Back(); ok {
@@ -145,7 +169,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		case 1:
 			tab.mode = modeInput
 			tab.searchURL = msg.URL
-			tab.input = tab.input.Show(msg.Header.Meta, "input")
+			tab.input = tab.input.Show(msg.Header.Meta, "", inputQuery)
 		case 4, 5, 6:
 			tab.mode = modeMessage
 			tab.message.Message = fmt.Sprintf("Error: %s", msg.Header.Meta)
@@ -155,6 +179,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				log.Print(err)
 				return tab, nil
 			}
+			tab.URL = msg.URL
 			u, _ := neturl.Parse(msg.URL)
 			var s string
 			s, tab.links, tab.title = parseContent(body, tab.viewport.Width, *u)
@@ -165,7 +190,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	}
 
 	switch tab.mode {
-	case modeInput, modeNavigate:
+	case modeInput:
 		tab.input, cmd = tab.input.Update(msg)
 		cmds = append(cmds, cmd)
 	case modeMessage:
@@ -232,7 +257,7 @@ func (tab Tab) handleMouse(msg tea.MouseMsg) (Tab, tea.Cmd) {
 
 func (tab Tab) View() string {
 	switch tab.mode {
-	case modeInput, modeNavigate:
+	case modeInput:
 		return tab.input.View()
 	case modeMessage:
 		return tab.message.View()
@@ -241,7 +266,7 @@ func (tab Tab) View() string {
 			return "\n  Initalizing..."
 		}
 
-		header := tab.title
+		header := tab.URL
 		if tab.loading {
 			header += fmt.Sprintf(" :: %s", tab.spinner.View())
 		}

@@ -48,6 +48,9 @@ func parseContent(data string, availableWidth int, baseURL neturl.URL) (
 			fmt.Fprint(&s, indent)
 			fmt.Fprintln(&s, color(line[2:], red))
 			ypos++
+			if title == "" {
+				title = line[2:]
+			}
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "## ") {

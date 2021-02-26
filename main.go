@@ -93,7 +93,6 @@ const (
 	modePage mode = iota
 	modeInput
 	modeMessage
-	modeNavigate
 )
 
 type model struct {

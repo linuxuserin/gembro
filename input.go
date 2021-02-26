@@ -11,12 +11,12 @@ type CloseInputEvent struct{}
 
 type InputEvent struct {
 	Value string
-	Type  string
+	Type  int
 }
 
 type Input struct {
 	Message string
-	Type    string
+	Type    int
 	input   textinput.Model
 }
 
@@ -32,11 +32,11 @@ func NewInput() Input {
 	}
 }
 
-func (inp Input) Show(msg, typ string) Input {
+func (inp Input) Show(msg, val string, typ int) Input {
 	inp.input.Focus()
 	inp.Message = msg
 	inp.Type = typ
-	inp.input.SetValue("")
+	inp.input.SetValue(val)
 	return inp
 }
 
