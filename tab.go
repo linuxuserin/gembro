@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	neturl "net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"git.sr.ht/~rafael/gemini-browser/gemini"
@@ -21,12 +23,12 @@ const (
 	inputNav = iota + 1
 	inputQuery
 	inputBookmark
+	inputDownloadSrc
 )
 
 const (
 	messagePlain = iota + 1
 	messageDelBookmark
-	messageDownloadSrc
 )
 
 type Tab struct {
@@ -46,14 +48,14 @@ type Tab struct {
 	bookmarks    *bookmark.Store
 	links        []linkPos
 	lastEvent    tea.MouseEventType
-	lastResponse *gemini.Response
+	lastResponse GeminiResponse
 }
 
 func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
 	ti := textinput.NewModel()
 	ti.Placeholder = ""
-	ti.CharLimit = 156
-	ti.Width = 50
+	ti.CharLimit = 255
+	ti.Width = 80
 
 	s := spinner.NewModel()
 	s.Spinner = spinner.Points
@@ -88,34 +90,36 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		}
 		return tab.showMessage(msg.Error(), messagePlain, false)
 	case CloseMessageEvent:
-		if msg.Type == messageDelBookmark && msg.Response && tab.lastResponse != nil {
-			if err := tab.bookmarks.Remove(tab.lastResponse.URL); err != nil {
-				log.Print(err)
+		tab.mode = modePage
+		switch msg.Type {
+		case messageDelBookmark:
+			if msg.Response {
+				if err := tab.bookmarks.Remove(tab.lastResponse.URL); err != nil {
+					log.Print(err)
+				}
 			}
 		}
-		tab.mode = modePage
 	case CloseInputEvent:
 		tab.mode = modePage
 	case InputEvent:
 		tab.mode = modePage
 		switch msg.Type {
 		case inputQuery:
-			if tab.lastResponse != nil {
-				url := fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(msg.Value))
-				cmd, tab.loading, tab.cancel = tab.loadURL(url, true, 1)
-				return tab, tea.Batch(cmd, spinner.Tick)
-			}
+			url := fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(msg.Value))
+			cmd, tab.loading, tab.cancel = tab.loadURL(url, true, 1)
+			return tab, tea.Batch(cmd, spinner.Tick)
 		case inputNav:
 			cmd, tab.loading, tab.cancel = tab.loadURL(msg.Value, true, 1)
 			return tab, tea.Batch(cmd, spinner.Tick)
 		case inputBookmark:
-			if tab.lastResponse != nil {
-				if err := tab.bookmarks.Add(tab.lastResponse.URL, msg.Value); err != nil {
-					log.Print(err)
-				}
+			if err := tab.bookmarks.Add(tab.lastResponse.URL, msg.Value); err != nil {
+				log.Print(err)
+			}
+		case inputDownloadSrc:
+			if err := tab.lastResponse.DownloadTo(msg.Value); err != nil {
+				log.Print(err)
 			}
 		}
-
 	case tea.KeyMsg:
 		log.Print(msg.String())
 		skey := msg.String()
@@ -126,11 +130,13 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				return tab, fireEvent(CloseCurrentTabEvent{})
 			case "g":
 				return tab.showInput("Go to", "", inputNav)
+			case "d":
+				return tab.showInput("Download to", suggestDownloadPath(tab.title), inputDownloadSrc)
 			case "h":
 				cmd, tab.loading, tab.cancel = tab.loadURL("home://", true, 1)
 				return tab, tea.Batch(cmd, spinner.Tick)
 			case "b":
-				if tab.lastResponse != nil && tab.bookmarks.Contains(tab.lastResponse.URL) {
+				if tab.bookmarks.Contains(tab.lastResponse.URL) {
 					m := fmt.Sprintf("Remove %q from bookmarks?", tab.lastResponse.URL)
 					return tab.showMessage(m, messageDelBookmark, true)
 				}
@@ -191,7 +197,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				log.Print(err)
 				return tab, nil
 			}
-			tab.lastResponse = msg.Response
+			tab.lastResponse = msg
 			u, _ := neturl.Parse(msg.URL)
 			var s string
 			s, tab.links, tab.title = parseContent(body, tab.viewport.Width, *u)
@@ -280,7 +286,7 @@ func (tab Tab) View() string {
 		}
 
 		var header string
-		if tab.lastResponse != nil {
+		if tab.lastResponse.Response != nil {
 			header = tab.lastResponse.URL
 		}
 		if tab.loading {
@@ -305,7 +311,7 @@ func (tab Tab) showMessage(msg string, typ int, withConfirm bool) (Tab, tea.Cmd)
 func (tab Tab) showInput(msg, val string, typ int) (Tab, tea.Cmd) {
 	tab.mode = modeInput
 	tab.input = tab.input.Show(msg, val, typ)
-	return tab, nil
+	return tab, textinput.Blink
 }
 
 func (tab Tab) homeContent() string {
@@ -341,6 +347,37 @@ func (le *LoadError) Error() string {
 type GeminiResponse struct {
 	*gemini.Response
 	level int
+}
+
+func suggestDownloadPath(name string) string {
+	path, _ := os.UserHomeDir()
+	downloadDir := filepath.Join(path, "Downloads")
+	if _, err := os.Stat(downloadDir); err == nil { // Dir exists
+		path = downloadDir
+	}
+	name = strings.NewReplacer(" ", "_", ".", "_").Replace(name)
+	var extra string
+	var count int
+	for {
+		newpath := filepath.Join(path, name+extra+".gmi")
+		_, err := os.Stat(newpath)
+		if os.IsNotExist(err) { // Not exists (or some other error)
+			return newpath
+		}
+		count++
+		if count > 100 { // Can't find available path, just suggest this one
+			return newpath
+		}
+		extra = fmt.Sprintf("_%d", count)
+	}
+}
+
+func (gi *GeminiResponse) DownloadTo(path string) error {
+	err := os.WriteFile(path, gi.Source, 0644)
+	if err != nil {
+		return fmt.Errorf("could not complete download: %w", err)
+	}
+	return nil
 }
 
 func (tab Tab) loadURL(url string, addHist bool, level int) (func() tea.Msg, bool, context.CancelFunc) {

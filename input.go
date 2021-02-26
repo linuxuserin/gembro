@@ -37,6 +37,7 @@ func (inp Input) Show(msg, val string, typ int) Input {
 	inp.Message = msg
 	inp.Type = typ
 	inp.input.SetValue(val)
+	inp.input.CursorEnd()
 	return inp
 }
 

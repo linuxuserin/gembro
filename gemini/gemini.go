@@ -119,7 +119,10 @@ func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool
 		return nil, err
 	}
 
-	resp := &Response{Header: *header, URL: surl.String(), Source: buf.Bytes()}
+	resp := &Response{Header: *header, URL: surl.String()}
+	defer func() {
+		resp.Source = buf.Bytes()
+	}()
 	switch header.Status {
 	case 1: // input
 		return resp, nil
