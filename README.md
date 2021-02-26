@@ -1,15 +1,15 @@
 # Gemini Browser
 
-A Gemini Proxy written in Go.
+A mouse-driver CLI Gemini client
 
 ## Run
 
 ```bash
-go build
-./gemini-browser -host 127.0.0.1:8080
+go build -o gemini-browser
+./gemini-browser
 ```
 
 ## Todo
 
-- Cert pinning
-
+- Resume session
+- Bookmark delete confirmation
