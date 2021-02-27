@@ -33,20 +33,6 @@ var builtinBookmarks = []bookmark.Bookmark{
 	{URL: "gemini://medusae.space/", Name: "A gemini directory"},
 }
 
-type SelectTabEvent struct {
-	Tab int
-}
-
-type CloseCurrentTabEvent struct{}
-type CloseTabEvent struct {
-	Tab int
-}
-
-type OpenNewTabEvent struct {
-	URL    string
-	Switch bool
-}
-
 func main() {
 	f, err := os.OpenFile("out.log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 	if err != nil {
@@ -206,6 +192,13 @@ func (m model) openNewTab(url string, switchTo bool) (model, tea.Cmd) {
 	return m, cmd
 }
 
+type LoadURLEvent struct {
+	URL        string
+	AddHistory bool
+}
+
+type GoBackEvent struct{}
+
 func (m model) selectTab(tab int) (model, tea.Cmd) {
 	if tab < len(m.tabs) {
 		m.currentTab = tab
@@ -214,10 +207,4 @@ func (m model) selectTab(tab int) (model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
-}
-
-func fireEvent(msg tea.Msg) func() tea.Msg {
-	return func() tea.Msg {
-		return msg
-	}
 }

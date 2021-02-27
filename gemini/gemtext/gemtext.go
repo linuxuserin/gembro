@@ -1,4 +1,4 @@
-package main
+package gemtext
 
 import (
 	"fmt"
@@ -25,13 +25,16 @@ func color(input, color string) string {
 	return termenv.String(input).Foreground(colors.Color(color)).String()
 }
 
-type linkPos struct {
-	y         int
-	url, name string
+type LinkPos struct {
+	Y         int
+	URL, Name string
 }
 
-func parseContent(data string, availableWidth int, baseURL neturl.URL) (
-	content string, links []linkPos, title string) {
+// ToANSI convert Gemtext to text suitable for terminal output with colors
+// It returns the converted text, a list of links with vertical positions, and the title of the page
+// the title defaults to given baseURL when not found in the page
+func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
+	content string, links []LinkPos, title string) {
 
 	var s strings.Builder
 	var mono bool
@@ -78,7 +81,7 @@ func parseContent(data string, availableWidth int, baseURL neturl.URL) (
 			}
 			fmt.Fprint(&s, indent)
 			fmt.Fprintf(&s, "> %s%s\n", color(l.Name, cornflowerblue), extra)
-			links = append(links, linkPos{y: ypos, url: furl.String(), name: l.Name})
+			links = append(links, LinkPos{Y: ypos, URL: furl.String(), Name: l.Name})
 			ypos++
 			continue
 		}

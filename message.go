@@ -6,11 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type CloseMessageEvent struct {
-	Response bool
-	Type     int
-}
-
 type Message struct {
 	Message     string
 	Type        int
@@ -23,7 +18,7 @@ func (m Message) Update(msg tea.Msg) (Message, tea.Cmd) {
 	case tea.KeyMsg:
 		switch skey := msg.String(); skey {
 		case "y", "n", "enter", "q":
-			cmds = append(cmds, fireEvent(CloseMessageEvent{Response: skey == "y", Type: m.Type}))
+			cmds = append(cmds, fireEvent(MessageEvent{Response: skey == "y", Type: m.Type}))
 		}
 	}
 	return m, tea.Batch(cmds...)

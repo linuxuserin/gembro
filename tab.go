@@ -15,7 +15,6 @@ import (
 	"git.sr.ht/~rafael/gemini-browser/internal/history"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -34,20 +33,14 @@ const (
 type Tab struct {
 	mode         mode
 	title        string
-	startURL     string
 	searchURL    string
-	ready        bool
-	loading      bool
 	input        Input
 	message      Message
-	spinner      spinner.Model
-	viewport     viewport.Model
+	viewport     Viewport
 	client       *gemini.Client
 	cancel       context.CancelFunc
 	history      *history.History
 	bookmarks    *bookmark.Store
-	links        []linkPos
-	lastEvent    tea.MouseEventType
 	lastResponse GeminiResponse
 }
 
@@ -57,18 +50,14 @@ func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
 	ti.CharLimit = 255
 	ti.Width = 80
 
-	s := spinner.NewModel()
-	s.Spinner = spinner.Points
-
 	return Tab{
 		mode:      modePage,
 		client:    client,
 		title:     "Home",
 		history:   &history.History{},
 		input:     NewInput(),
+		viewport:  NewViewport(startURL),
 		message:   Message{},
-		spinner:   s,
-		startURL:  startURL,
 		bookmarks: bs,
 	}
 }
@@ -83,13 +72,13 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		var le *LoadError
 		if errors.As(msg, &le) {
 			log.Print(le.Unwrap())
-			tab.loading = false
+			tab.viewport.loading = false
 		}
 		if errors.Is(msg, context.Canceled) {
 			return tab, nil
 		}
 		return tab.showMessage(msg.Error(), messagePlain, false)
-	case CloseMessageEvent:
+	case MessageEvent:
 		tab.mode = modePage
 		switch msg.Type {
 		case messageDelBookmark:
@@ -117,6 +106,12 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			if err := tab.lastResponse.DownloadTo(msg.Value); err != nil {
 				log.Print(err)
 			}
+		}
+	case LoadURLEvent:
+		return tab.loadURL(msg.URL, msg.AddHistory, 1)
+	case GoBackEvent:
+		if url, ok := tab.history.Back(); ok {
+			return tab.loadURL(url, false, 1)
 		}
 	case tea.KeyMsg:
 		log.Print(msg.String())
@@ -148,56 +143,8 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				}
 			}
 		}
-	case tea.WindowSizeMsg:
-		verticalMargins := headerHeight + footerHeight
-
-		if !tab.ready {
-			tab.viewport = viewport.Model{Width: msg.Width, Height: msg.Height - verticalMargins}
-			tab.viewport.YPosition = headerHeight
-			tab.viewport.HighPerformanceRendering = false
-			tab.viewport.SetContent("")
-			tab.ready = true
-			startURL := tab.startURL
-			if startURL == "" {
-				startURL = "home://"
-			}
-			return tab.loadURL(startURL, true, 1)
-		} else {
-			tab.viewport.Width = msg.Width
-			tab.viewport.Height = msg.Height - verticalMargins
-		}
-	case tea.MouseMsg:
-		tab, cmd = tab.handleMouse(msg)
-		cmds = append(cmds, cmd)
 	case GeminiResponse:
-		tab.loading = false
-		switch msg.Header.Status {
-		default:
-			log.Print(msg.Header)
-		case 1:
-			tab.searchURL = msg.URL
-			return tab.showInput(msg.Header.Meta, "", inputQuery)
-		case 3:
-			if msg.level > 5 {
-				return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", messagePlain, false)
-			}
-			return tab.loadURL(msg.Header.Meta, false, msg.level+1)
-		case 4, 5, 6:
-			return tab.showMessage(fmt.Sprintf("Error: %s", msg.Header.Meta), messagePlain, false)
-		case 2:
-			body, err := msg.GetBody()
-			if err != nil {
-				log.Print(err)
-				return tab, nil
-			}
-			tab.lastResponse = msg
-			u, _ := neturl.Parse(msg.URL)
-			var s string
-			s, tab.links, tab.title = parseContent(body, tab.viewport.Width, *u)
-			tab.viewport.SetContent(s)
-			tab.viewport.GotoTop()
-			return tab, nil
-		}
+		return tab.handleResponse(msg)
 	}
 
 	switch tab.mode {
@@ -212,56 +159,6 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
-	if tab.loading {
-		tab.spinner, cmd = tab.spinner.Update(msg)
-		cmds = append(cmds, cmd)
-	}
-	return tab, tea.Batch(cmds...)
-}
-
-func (tab Tab) findLinkY(y int) *linkPos {
-	for _, l := range tab.links {
-		if l.y == y {
-			return &l
-		}
-	}
-	return nil
-}
-
-func (tab Tab) handleMouse(msg tea.MouseMsg) (Tab, tea.Cmd) {
-	log.Printf("Mouse event: %v", msg)
-	var cmds []tea.Cmd
-	var cmd tea.Cmd
-
-	switch msg.Type {
-	case tea.MouseLeft, tea.MouseMiddle, tea.MouseRight:
-		tab.lastEvent = msg.Type
-	case tea.MouseRelease:
-		switch tab.lastEvent {
-		case tea.MouseLeft, tea.MouseMiddle:
-			if msg.Y == 0 {
-				sel := msg.X / 4
-				if tab.lastEvent == tea.MouseMiddle {
-					return tab, fireEvent(CloseTabEvent{Tab: sel})
-				} else {
-					return tab, fireEvent(SelectTabEvent{Tab: sel})
-				}
-			}
-			ypos := tab.viewport.YOffset + msg.Y - headerHeight
-			if link := tab.findLinkY(ypos); link != nil {
-				if tab.lastEvent == tea.MouseMiddle {
-					cmd = fireEvent(OpenNewTabEvent{URL: link.url})
-					cmds = append(cmds, cmd)
-				} else {
-					return tab.loadURL(link.url, true, 1)
-				}
-			}
-		case tea.MouseRight:
-			if url, ok := tab.history.Back(); ok {
-				return tab.loadURL(url, false, 1)
-			}
-		}
-	}
 	return tab, tea.Batch(cmds...)
 }
 
@@ -272,23 +169,7 @@ func (tab Tab) View() string {
 	case modeMessage:
 		return tab.message.View()
 	default:
-		if !tab.ready {
-			return "\n  Initalizing..."
-		}
-
-		var header string
-		if tab.lastResponse.Response != nil {
-			header = tab.lastResponse.URL
-		}
-		if tab.loading {
-			header += fmt.Sprintf(" :: %s", tab.spinner.View())
-		}
-		footer := fmt.Sprintf(" %3.f%%", tab.viewport.ScrollPercent()*100)
-		footerLead := "Back (RMB) Forward (->) Close tab (q) Quit (ctrl+c) "
-		gapSize := tab.viewport.Width - RuneCount(footer) - RuneCount(footerLead)
-		footer = footerLead + strings.Repeat("─", gapSize) + footer
-
-		return fmt.Sprintf("%s\n%s\n%s", header, tab.viewport.View(), footer)
+		return tab.viewport.View()
 	}
 }
 
@@ -348,13 +229,41 @@ func (gi *GeminiResponse) DownloadTo(path string) error {
 	return nil
 }
 
+func (tab Tab) handleResponse(resp GeminiResponse) (Tab, tea.Cmd) {
+	tab.viewport.loading = false
+	switch resp.Header.Status {
+	case 1:
+		tab.searchURL = resp.URL
+		return tab.showInput(resp.Header.Meta, "", inputQuery)
+	case 3:
+		if resp.level > 5 {
+			return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", messagePlain, false)
+		}
+		return tab.loadURL(resp.Header.Meta, false, resp.level+1)
+	case 4, 5, 6:
+		return tab.showMessage(fmt.Sprintf("Error: %s", resp.Header.Meta), messagePlain, false)
+	case 2:
+		body, err := resp.GetBody()
+		if err != nil {
+			log.Print(err)
+			return tab, nil
+		}
+		tab.lastResponse = resp
+		tab.viewport = tab.viewport.SetContent(body, resp.URL)
+		return tab, nil
+	default:
+		log.Print(resp.Header)
+		return tab, nil
+	}
+}
+
 func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 	if tab.cancel != nil {
 		tab.cancel()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	tab.cancel = cancel
-	tab.loading = true
+	tab.viewport.loading = true
 
 	cmd := func() tea.Msg {
 		defer cancel()
