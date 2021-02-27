@@ -29,4 +29,3 @@ go build
 
 - Resume session
 - Handle other media types (than text/gemini) (again)
-- Open non-gemini links
