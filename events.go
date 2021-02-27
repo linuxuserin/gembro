@@ -28,12 +28,14 @@ type ShowMessageEvent struct {
 
 type CloseInputEvent struct{}
 type InputEvent struct {
-	Value string
-	Type  int
+	Value   string
+	Type    int
+	Payload string
 }
 type ShowInputEvent struct {
 	Message, Value string
 	Type           int
+	Payload        string
 }
 
 func fireEvent(msg tea.Msg) func() tea.Msg {

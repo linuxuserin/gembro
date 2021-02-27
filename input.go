@@ -11,6 +11,7 @@ type Input struct {
 	Message string
 	Type    int
 	input   textinput.Model
+	Payload string
 }
 
 func NewInput() Input {
@@ -25,10 +26,11 @@ func NewInput() Input {
 	}
 }
 
-func (inp Input) Show(msg, val string, typ int) Input {
+func (inp Input) Show(msg, val, payload string, typ int) Input {
 	inp.input.Focus()
 	inp.Message = msg
 	inp.Type = typ
+	inp.Payload = payload
 	inp.input.SetValue(val)
 	inp.input.CursorEnd()
 	return inp
@@ -42,7 +44,7 @@ func (inp Input) Update(msg tea.Msg) (Input, tea.Cmd) {
 		switch msg.String() {
 		case "enter":
 			inp.input.Blur()
-			cmds = append(cmds, fireEvent(InputEvent{Value: inp.input.Value(), Type: inp.Type}))
+			cmds = append(cmds, fireEvent(InputEvent{Value: inp.input.Value(), Type: inp.Type, Payload: inp.Payload}))
 		case "ctrl+q":
 			inp.input.Blur()
 			cmds = append(cmds, fireEvent(CloseInputEvent{}))

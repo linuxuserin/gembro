@@ -33,7 +33,6 @@ const (
 
 type Tab struct {
 	mode         mode
-	searchURL    string
 	input        Input
 	message      Message
 	viewport     Viewport
@@ -101,12 +100,12 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		tab.mode = modePage
 		switch msg.Type {
 		case inputQuery:
-			url := fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(msg.Value))
+			url := fmt.Sprintf("%s?%s", msg.Payload, neturl.QueryEscape(msg.Value))
 			return tab.loadURL(url, true, 1)
 		case inputNav:
 			return tab.loadURL(msg.Value, true, 1)
 		case inputBookmark:
-			if err := tab.bookmarks.Add(tab.lastResponse.URL, msg.Value); err != nil {
+			if err := tab.bookmarks.Add(msg.Payload, msg.Value); err != nil {
 				log.Print(err)
 			}
 		case inputDownloadSrc:
@@ -115,7 +114,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			}
 		}
 	case ShowInputEvent:
-		return tab.showInput(msg.Message, msg.Value, msg.Type)
+		return tab.showInput(msg.Message, msg.Value, msg.Payload, msg.Type)
 	case LoadURLEvent:
 		return tab.loadURL(msg.URL, msg.AddHistory, 1)
 	case GoBackEvent:
@@ -131,7 +130,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			m := fmt.Sprintf("Remove %q from bookmarks?", msg.URL)
 			return tab.showMessage(m, "", messageDelBookmark, true)
 		}
-		return tab.showInput("Name", msg.Title, inputBookmark)
+		return tab.showInput("Name", msg.Title, msg.URL, inputBookmark)
 	case GeminiResponse:
 		return tab.handleResponse(msg)
 	}
@@ -169,9 +168,9 @@ func (tab Tab) showMessage(msg, payload string, typ int, withConfirm bool) (Tab,
 	return tab, nil
 }
 
-func (tab Tab) showInput(msg, val string, typ int) (Tab, tea.Cmd) {
+func (tab Tab) showInput(msg, val, payload string, typ int) (Tab, tea.Cmd) {
 	tab.mode = modeInput
-	tab.input = tab.input.Show(msg, val, typ)
+	tab.input = tab.input.Show(msg, val, payload, typ)
 	return tab, textinput.Blink
 }
 
@@ -222,8 +221,7 @@ func (tab Tab) handleResponse(resp GeminiResponse) (Tab, tea.Cmd) {
 	tab.viewport.loading = false
 	switch resp.Header.Status {
 	case 1:
-		tab.searchURL = resp.URL
-		return tab.showInput(resp.Header.Meta, "", inputQuery)
+		return tab.showInput(resp.Header.Meta, "", resp.URL, inputQuery)
 	case 3:
 		if resp.level > 5 {
 			return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", "", messagePlain, false)

@@ -75,7 +75,7 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 		case "q":
 			return v, fireEvent(CloseCurrentTabEvent{})
 		case "g":
-			return v, fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav})
+			return v, fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav, Payload: ""})
 		case "d":
 			return v, fireEvent(ShowInputEvent{Message: "Download to", Value: suggestDownloadPath(v.title),
 				Type: inputDownloadSrc})
