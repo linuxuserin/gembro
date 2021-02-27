@@ -5,7 +5,7 @@ import (
 	neturl "net/url"
 	"strings"
 
-	"git.sr.ht/~rafael/gemini-browser/gemini"
+	"git.sr.ht/~rafael/gembro/gemini"
 	"github.com/muesli/termenv"
 )
 

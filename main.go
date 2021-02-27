@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~rafael/gemini-browser/gemini"
-	"git.sr.ht/~rafael/gemini-browser/internal/bookmark"
+	"git.sr.ht/~rafael/gembro/gemini"
+	"git.sr.ht/~rafael/gembro/internal/bookmark"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 )

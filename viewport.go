@@ -6,7 +6,7 @@ import (
 	neturl "net/url"
 	"strings"
 
-	"git.sr.ht/~rafael/gemini-browser/gemini/gemtext"
+	"git.sr.ht/~rafael/gembro/gemini/gemtext"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"

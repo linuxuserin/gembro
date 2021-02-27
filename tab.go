@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~rafael/gemini-browser/gemini"
-	"git.sr.ht/~rafael/gemini-browser/internal/bookmark"
-	"git.sr.ht/~rafael/gemini-browser/internal/history"
+	"git.sr.ht/~rafael/gembro/gemini"
+	"git.sr.ht/~rafael/gembro/internal/bookmark"
+	"git.sr.ht/~rafael/gembro/internal/history"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"

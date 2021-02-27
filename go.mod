@@ -1,4 +1,4 @@
-module git.sr.ht/~rafael/gemini-browser
+module git.sr.ht/~rafael/gembro
 
 go 1.15
 
