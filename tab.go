@@ -382,10 +382,11 @@ func (gi *GeminiResponse) DownloadTo(path string) error {
 }
 
 func (tab Tab) loadURL(url string, addHist bool, level int) (func() tea.Msg, bool, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	loading := true
 
 	return func() tea.Msg {
+		defer cancel()
 		log.Print(url)
 		u, err := neturl.Parse(url)
 		if err != nil {
