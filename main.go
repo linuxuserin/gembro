@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	neturl "net/url"
 	"os"
@@ -34,24 +35,31 @@ var builtinBookmarks = []bookmark.Bookmark{
 }
 
 func main() {
-	f, err := os.OpenFile("out.log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-	log.SetOutput(f)
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-	cacheDir := flag.String("cache-dir", "", "Directory to store cache files")
+	cacheDir := flag.String("cache-dir", "", "Directory to store cache files (like cert info and bookmarks)")
 	url := flag.String("url", "", "URL to start with")
-	debug := flag.String("debug", "", "Debug an URL")
+	debug := flag.String("debug-url", "", "Debug an URL")
+	logFile := flag.String("log-file", "", "File to output log to")
 	flag.Parse()
+
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if *debug != "" {
 		if err := debugURL(*cacheDir, *debug); err != nil {
 			log.Fatal(err)
 		}
 		return
+	}
+
+	if *logFile != "" {
+		f, err := os.OpenFile(*logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could not open log file: %s\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		log.SetOutput(f)
+	} else {
+		log.SetOutput(io.Discard)
 	}
 
 	if err := run(*cacheDir, *url); err != nil {
