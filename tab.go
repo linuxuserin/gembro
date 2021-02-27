@@ -250,7 +250,9 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 	cmd := func() tea.Msg {
 		defer cancel()
 
-		log.Print(url)
+		if !strings.Contains(url, "://") {
+			url = fmt.Sprintf("gemini://%s", url)
+		}
 		u, err := neturl.Parse(url)
 		if err != nil {
 			return err
