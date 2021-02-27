@@ -70,6 +70,24 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 	case tea.MouseMsg:
 		v, cmd = v.handleMouse(msg)
 		cmds = append(cmds, cmd)
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q":
+			return v, fireEvent(CloseCurrentTabEvent{})
+		case "g":
+			return v, fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav})
+		case "d":
+			return v, fireEvent(ShowInputEvent{Message: "Download to", Value: suggestDownloadPath(v.title),
+				Type: inputDownloadSrc})
+		case "h":
+			return v, fireEvent(LoadURLEvent{URL: "home://", AddHistory: true})
+		case "b":
+			return v, fireEvent(ToggleBookmarkEvent{URL: v.URL, Title: v.title})
+		case "left":
+			return v, fireEvent(GoBackEvent{})
+		case "right":
+			return v, fireEvent(GoForwardEvent{})
+		}
 	}
 
 	if v.loading {

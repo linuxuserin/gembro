@@ -18,11 +18,20 @@ type MessageEvent struct {
 	Response bool
 	Type     int
 }
+type ShowMessageEvent struct {
+	Message     string
+	Type        int
+	WithConfirm bool
+}
 
 type CloseInputEvent struct{}
 type InputEvent struct {
 	Value string
 	Type  int
+}
+type ShowInputEvent struct {
+	Message, Value string
+	Type           int
 }
 
 func fireEvent(msg tea.Msg) func() tea.Msg {

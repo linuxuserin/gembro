@@ -198,6 +198,11 @@ type LoadURLEvent struct {
 }
 
 type GoBackEvent struct{}
+type GoForwardEvent struct{}
+
+type ToggleBookmarkEvent struct {
+	URL, Title string
+}
 
 func (m model) selectTab(tab int) (model, tea.Cmd) {
 	if tab < len(m.tabs) {

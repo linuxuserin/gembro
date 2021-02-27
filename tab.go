@@ -32,7 +32,6 @@ const (
 
 type Tab struct {
 	mode         mode
-	title        string
 	searchURL    string
 	input        Input
 	message      Message
@@ -53,7 +52,6 @@ func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
 	return Tab{
 		mode:      modePage,
 		client:    client,
-		title:     "Home",
 		history:   &history.History{},
 		input:     NewInput(),
 		viewport:  NewViewport(startURL),
@@ -88,6 +86,8 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				}
 			}
 		}
+	case ShowMessageEvent:
+		return tab.showMessage(msg.Message, msg.Type, msg.WithConfirm)
 	case CloseInputEvent:
 		tab.mode = modePage
 	case InputEvent:
@@ -107,42 +107,24 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				log.Print(err)
 			}
 		}
+	case ShowInputEvent:
+		return tab.showInput(msg.Message, msg.Value, msg.Type)
 	case LoadURLEvent:
 		return tab.loadURL(msg.URL, msg.AddHistory, 1)
 	case GoBackEvent:
 		if url, ok := tab.history.Back(); ok {
 			return tab.loadURL(url, false, 1)
 		}
-	case tea.KeyMsg:
-		log.Print(msg.String())
-		skey := msg.String()
-		switch tab.mode {
-		case modePage:
-			switch skey {
-			case "q":
-				return tab, fireEvent(CloseCurrentTabEvent{})
-			case "g":
-				return tab.showInput("Go to", "", inputNav)
-			case "d":
-				return tab.showInput("Download to", suggestDownloadPath(tab.title), inputDownloadSrc)
-			case "h":
-				return tab.loadURL("home://", true, 1)
-			case "b":
-				if tab.bookmarks.Contains(tab.lastResponse.URL) {
-					m := fmt.Sprintf("Remove %q from bookmarks?", tab.lastResponse.URL)
-					return tab.showMessage(m, messageDelBookmark, true)
-				}
-				return tab.showInput("Name", tab.title, inputBookmark)
-			case "left":
-				if url, ok := tab.history.Back(); ok {
-					return tab.loadURL(url, false, 1)
-				}
-			case "right":
-				if url, ok := tab.history.Forward(); ok {
-					return tab.loadURL(url, false, 1)
-				}
-			}
+	case GoForwardEvent:
+		if url, ok := tab.history.Forward(); ok {
+			return tab.loadURL(url, false, 1)
 		}
+	case ToggleBookmarkEvent:
+		if tab.bookmarks.Contains(msg.URL) {
+			m := fmt.Sprintf("Remove %q from bookmarks?", msg.URL)
+			return tab.showMessage(m, messageDelBookmark, true)
+		}
+		return tab.showInput("Name", msg.Title, inputBookmark)
 	case GeminiResponse:
 		return tab.handleResponse(msg)
 	}
