@@ -41,12 +41,14 @@ func (v Viewport) SetContent(content, url, mediaType string) Viewport {
 	switch mediaType := strings.Split(mediaType, ";")[0]; mediaType {
 	case "text/gemini":
 		s, v.links, v.title = gemtext.ToANSI(content, v.viewport.Width, *u)
-	case "text/plain", "text/html":
-		s = gemtext.ApplyMargin(content, v.viewport.Width)
-		v.links = nil
-		v.title = url
 	default:
-		s = fmt.Sprintf("Can't render content of this type: %s\n", mediaType)
+		if strings.HasPrefix(mediaType, "text/") {
+			s = gemtext.ApplyMargin(content, v.viewport.Width)
+			v.links = nil
+			v.title = url
+		} else {
+			s = fmt.Sprintf("Can't render content of this type: %s\n", mediaType)
+		}
 	}
 
 	v.viewport.SetContent(s)
