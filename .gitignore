@@ -6,4 +6,5 @@
 /.vscode
 certs.json
 /out.log
-/gemini-browser
+/gembro
+/docs/site.tar.gz

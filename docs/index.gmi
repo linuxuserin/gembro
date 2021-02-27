@@ -2,7 +2,8 @@
 
 A mouse-driven CLI Gemini client
 
-Made with the [Bubble Tea](https://github.com/charmbracelet/bubbletea) framework
+Made with:
+=> https://github.com/charmbracelet/bubbletea Bubble Tea framework
 
 ## Features
 
@@ -16,7 +17,7 @@ Made with the [Bubble Tea](https://github.com/charmbracelet/bubbletea) framework
 
 'You may think of Gemini as "the web, stripped right back to its essence" or as "Gopher, souped up and modernised just a little", depending upon your perspective (the latter view is probably more accurate).'
 
-See [Project Gemini](https://gemini.circumlunar.space/)
+=> gemini://gemini.circumlunar.space/ Project Gemini
 
 ## Run
 
@@ -30,3 +31,4 @@ go build
 - Resume session
 - Handle other media types (than text/gemini) (again)
 - Open non-gemini links
+
