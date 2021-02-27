@@ -28,6 +28,7 @@ const (
 const (
 	messagePlain = iota + 1
 	messageDelBookmark
+	messageLoadExternal
 )
 
 type Tab struct {
@@ -75,7 +76,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		if errors.Is(msg, context.Canceled) {
 			return tab, nil
 		}
-		return tab.showMessage(msg.Error(), messagePlain, false)
+		return tab.showMessage(msg.Error(), "", messagePlain, false)
 	case MessageEvent:
 		tab.mode = modePage
 		switch msg.Type {
@@ -85,9 +86,15 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 					log.Print(err)
 				}
 			}
+		case messageLoadExternal:
+			if msg.Response {
+				if err := osOpenURL(msg.Payload); err != nil {
+					log.Print(err)
+				}
+			}
 		}
 	case ShowMessageEvent:
-		return tab.showMessage(msg.Message, msg.Type, msg.WithConfirm)
+		return tab.showMessage(msg.Message, msg.Payload, msg.Type, msg.WithConfirm)
 	case CloseInputEvent:
 		tab.mode = modePage
 	case InputEvent:
@@ -122,7 +129,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	case ToggleBookmarkEvent:
 		if tab.bookmarks.Contains(msg.URL) {
 			m := fmt.Sprintf("Remove %q from bookmarks?", msg.URL)
-			return tab.showMessage(m, messageDelBookmark, true)
+			return tab.showMessage(m, "", messageDelBookmark, true)
 		}
 		return tab.showInput("Name", msg.Title, inputBookmark)
 	case GeminiResponse:
@@ -155,9 +162,9 @@ func (tab Tab) View() string {
 	}
 }
 
-func (tab Tab) showMessage(msg string, typ int, withConfirm bool) (Tab, tea.Cmd) {
+func (tab Tab) showMessage(msg, payload string, typ int, withConfirm bool) (Tab, tea.Cmd) {
 	tab.message = Message{Message: msg,
-		WithConfirm: withConfirm, Type: typ}
+		WithConfirm: withConfirm, Type: typ, Payload: payload}
 	tab.mode = modeMessage
 	return tab, nil
 }
@@ -219,11 +226,11 @@ func (tab Tab) handleResponse(resp GeminiResponse) (Tab, tea.Cmd) {
 		return tab.showInput(resp.Header.Meta, "", inputQuery)
 	case 3:
 		if resp.level > 5 {
-			return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", messagePlain, false)
+			return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", "", messagePlain, false)
 		}
 		return tab.loadURL(resp.Header.Meta, false, resp.level+1)
 	case 4, 5, 6:
-		return tab.showMessage(fmt.Sprintf("Error: %s", resp.Header.Meta), messagePlain, false)
+		return tab.showMessage(fmt.Sprintf("Error: %s", resp.Header.Meta), "", messagePlain, false)
 	case 2:
 		body, err := resp.GetBody()
 		if err != nil {
@@ -240,6 +247,10 @@ func (tab Tab) handleResponse(resp GeminiResponse) (Tab, tea.Cmd) {
 }
 
 func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
+	if url != "home://" && !strings.HasPrefix(url, "gemini://") {
+		tab.viewport.loading = false
+		return tab.showMessage(fmt.Sprintf("Open %q externally?", url), url, messageLoadExternal, true)
+	}
 	if tab.cancel != nil {
 		tab.cancel()
 	}
@@ -263,9 +274,6 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 			}
 			return GeminiResponse{Response: &gemini.Response{Body: tab.homeContent(),
 				URL: url, Header: gemini.Header{Status: 2, Meta: ""}}, level: level}
-		}
-		if u.Scheme != "gemini" {
-			return &LoadError{err: nil, message: "Incorrect protocol"}
 		}
 		resp, err := tab.client.LoadURL(ctx, *u, true)
 		if err := ctx.Err(); err != nil {

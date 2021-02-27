@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -28,4 +30,24 @@ func suggestDownloadPath(name string) string {
 		}
 		extra = fmt.Sprintf("_%d", count)
 	}
+}
+
+func osOpenURL(url string) error {
+	var opener string
+	switch runtime.GOOS {
+	case "windows":
+		opener = "start"
+	case "darwin":
+		opener = "open"
+	case "linux":
+		fallthrough
+	default:
+		opener = "xdg-open"
+	}
+
+	err := exec.Command(opener, url).Start()
+	if err != nil {
+		return fmt.Errorf("could not open URL: %w", err)
+	}
+	return nil
 }

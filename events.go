@@ -17,9 +17,11 @@ type OpenNewTabEvent struct {
 type MessageEvent struct {
 	Response bool
 	Type     int
+	Payload  string
 }
 type ShowMessageEvent struct {
 	Message     string
+	Payload     string
 	Type        int
 	WithConfirm bool
 }

@@ -10,6 +10,7 @@ type Message struct {
 	Message     string
 	Type        int
 	WithConfirm bool
+	Payload     string
 }
 
 func (m Message) Update(msg tea.Msg) (Message, tea.Cmd) {
@@ -18,7 +19,7 @@ func (m Message) Update(msg tea.Msg) (Message, tea.Cmd) {
 	case tea.KeyMsg:
 		switch skey := msg.String(); skey {
 		case "y", "n", "enter", "q":
-			cmds = append(cmds, fireEvent(MessageEvent{Response: skey == "y", Type: m.Type}))
+			cmds = append(cmds, fireEvent(MessageEvent{Response: skey == "y", Type: m.Type, Payload: m.Payload}))
 		}
 	}
 	return m, tea.Batch(cmds...)
