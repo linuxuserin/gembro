@@ -7,7 +7,6 @@ import (
 	"log"
 	neturl "net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -107,11 +106,9 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		switch msg.Type {
 		case inputQuery:
 			url := fmt.Sprintf("%s?%s", tab.searchURL, neturl.QueryEscape(msg.Value))
-			cmd, tab.loading, tab.cancel = tab.loadURL(url, true, 1)
-			return tab, tea.Batch(cmd, spinner.Tick)
+			return tab.loadURL(url, true, 1)
 		case inputNav:
-			cmd, tab.loading, tab.cancel = tab.loadURL(msg.Value, true, 1)
-			return tab, tea.Batch(cmd, spinner.Tick)
+			return tab.loadURL(msg.Value, true, 1)
 		case inputBookmark:
 			if err := tab.bookmarks.Add(tab.lastResponse.URL, msg.Value); err != nil {
 				log.Print(err)
@@ -134,8 +131,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			case "d":
 				return tab.showInput("Download to", suggestDownloadPath(tab.title), inputDownloadSrc)
 			case "h":
-				cmd, tab.loading, tab.cancel = tab.loadURL("home://", true, 1)
-				return tab, tea.Batch(cmd, spinner.Tick)
+				return tab.loadURL("home://", true, 1)
 			case "b":
 				if tab.bookmarks.Contains(tab.lastResponse.URL) {
 					m := fmt.Sprintf("Remove %q from bookmarks?", tab.lastResponse.URL)
@@ -144,13 +140,11 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				return tab.showInput("Name", tab.title, inputBookmark)
 			case "left":
 				if url, ok := tab.history.Back(); ok {
-					cmd, tab.loading, tab.cancel = tab.loadURL(url, false, 1)
-					return tab, tea.Batch(cmd, spinner.Tick)
+					return tab.loadURL(url, false, 1)
 				}
 			case "right":
 				if url, ok := tab.history.Forward(); ok {
-					cmd, tab.loading, tab.cancel = tab.loadURL(url, false, 1)
-					return tab, tea.Batch(cmd, spinner.Tick)
+					return tab.loadURL(url, false, 1)
 				}
 			}
 		}
@@ -167,8 +161,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			if startURL == "" {
 				startURL = "home://"
 			}
-			cmd, tab.loading, tab.cancel = tab.loadURL(startURL, true, 1)
-			cmds = append(cmds, cmd, spinner.Tick)
+			return tab.loadURL(startURL, true, 1)
 		} else {
 			tab.viewport.Width = msg.Width
 			tab.viewport.Height = msg.Height - verticalMargins
@@ -188,8 +181,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			if msg.level > 5 {
 				return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", messagePlain, false)
 			}
-			cmd, tab.loading, tab.cancel = tab.loadURL(msg.Header.Meta, false, msg.level+1)
-			return tab, tea.Batch(cmd, spinner.Tick)
+			return tab.loadURL(msg.Header.Meta, false, msg.level+1)
 		case 4, 5, 6:
 			return tab.showMessage(fmt.Sprintf("Error: %s", msg.Header.Meta), messagePlain, false)
 		case 2:
@@ -261,14 +253,12 @@ func (tab Tab) handleMouse(msg tea.MouseMsg) (Tab, tea.Cmd) {
 					cmd = fireEvent(OpenNewTabEvent{URL: link.url})
 					cmds = append(cmds, cmd)
 				} else {
-					cmd, tab.loading, tab.cancel = tab.loadURL(link.url, true, 1)
-					cmds = append(cmds, cmd, spinner.Tick)
+					return tab.loadURL(link.url, true, 1)
 				}
 			}
 		case tea.MouseRight:
 			if url, ok := tab.history.Back(); ok {
-				cmd, tab.loading, tab.cancel = tab.loadURL(url, false, 1)
-				return tab, tea.Batch(cmd, spinner.Tick)
+				return tab.loadURL(url, false, 1)
 			}
 		}
 	}
@@ -350,29 +340,6 @@ type GeminiResponse struct {
 	level int
 }
 
-func suggestDownloadPath(name string) string {
-	path, _ := os.UserHomeDir()
-	downloadDir := filepath.Join(path, "Downloads")
-	if _, err := os.Stat(downloadDir); err == nil { // Dir exists
-		path = downloadDir
-	}
-	name = strings.NewReplacer(" ", "_", ".", "_").Replace(name)
-	var extra string
-	var count int
-	for {
-		newpath := filepath.Join(path, name+extra+".gmi")
-		_, err := os.Stat(newpath)
-		if os.IsNotExist(err) { // Not exists (or some other error)
-			return newpath
-		}
-		count++
-		if count > 100 { // Can't find available path, just suggest this one
-			return newpath
-		}
-		extra = fmt.Sprintf("_%d", count)
-	}
-}
-
 func (gi *GeminiResponse) DownloadTo(path string) error {
 	err := os.WriteFile(path, gi.Source, 0644)
 	if err != nil {
@@ -381,15 +348,15 @@ func (gi *GeminiResponse) DownloadTo(path string) error {
 	return nil
 }
 
-func (tab Tab) loadURL(url string, addHist bool, level int) (func() tea.Msg, bool, context.CancelFunc) {
+func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
+	if tab.cancel != nil {
+		tab.cancel()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
-	loading := true
+	tab.cancel = cancel
+	tab.loading = true
 
-	return func() tea.Msg {
-		// Cancel previous load
-		if tab.cancel != nil {
-			tab.cancel()
-		}
+	cmd := func() tea.Msg {
 		defer cancel()
 
 		log.Print(url)
@@ -418,5 +385,6 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (func() tea.Msg, boo
 			tab.history.Add(u.String())
 		}
 		return GeminiResponse{Response: resp, level: level}
-	}, loading, cancel
+	}
+	return tab, tea.Batch(cmd, spinner.Tick)
 }
