@@ -24,7 +24,7 @@ const (
 )
 
 const (
-	headerHeight = 2
+	headerHeight = 3
 	footerHeight = 1
 )
 

@@ -33,11 +33,21 @@ func NewViewport(startURL string) Viewport {
 	}
 }
 
-func (v Viewport) SetContent(content, url string) Viewport {
+func (v Viewport) SetContent(content, url, mediaType string) Viewport {
 	v.URL = url
 	u, _ := neturl.Parse(url)
 	var s string
-	s, v.links, v.title = gemtext.ToANSI(content, v.viewport.Width, *u)
+
+	switch mediaType := strings.Split(mediaType, ";")[0]; mediaType {
+	case "text/gemini":
+		s, v.links, v.title = gemtext.ToANSI(content, v.viewport.Width, *u)
+	case "text/plain", "text/html":
+		s = gemtext.ApplyMargin(content, v.viewport.Width)
+		v.links = nil
+		v.title = url
+	default:
+		s = fmt.Sprintf("Can't render content of this type: %s\n", mediaType)
+	}
 
 	v.viewport.SetContent(s)
 	v.viewport.GotoTop()
@@ -105,13 +115,16 @@ func (v Viewport) View() string {
 		return "\n  Initalizing..."
 	}
 
-	header := v.URL
+	header := fmt.Sprintln(v.URL)
 	if v.loading {
 		header += fmt.Sprintf(" :: %s", v.spinner.View())
 	}
 	footer := fmt.Sprintf(" %3.f%%", v.viewport.ScrollPercent()*100)
 	footerLead := "Back (RMB) Forward (->) Home (h) Bookmark (b) Download (d) Close tab (q) Quit (ctrl+c) "
 	gapSize := v.viewport.Width - gemtext.RuneCount(footer) - gemtext.RuneCount(footerLead)
+	if gapSize < 0 {
+		gapSize = 0
+	}
 	footer = footerLead + strings.Repeat("─", gapSize) + footer
 
 	return fmt.Sprintf("%s\n%s\n%s", header, v.viewport.View(), footer)

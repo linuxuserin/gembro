@@ -236,7 +236,7 @@ func (tab Tab) handleResponse(resp GeminiResponse) (Tab, tea.Cmd) {
 			return tab, nil
 		}
 		tab.lastResponse = resp
-		tab.viewport = tab.viewport.SetContent(body, resp.URL)
+		tab.viewport = tab.viewport.SetContent(body, resp.URL, resp.Header.Meta)
 		return tab, nil
 	default:
 		log.Print(resp.Header)
@@ -271,7 +271,7 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 				tab.history.Add(url)
 			}
 			return GeminiResponse{Response: &gemini.Response{Body: tab.homeContent(),
-				URL: url, Header: gemini.Header{Status: 2, Meta: ""}}, level: level}
+				URL: url, Header: gemini.Header{Status: 2, Meta: "text/gemini"}}, level: level}
 		}
 		resp, err := tab.client.LoadURL(ctx, *u, true)
 		if err := ctx.Err(); err != nil {
