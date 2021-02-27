@@ -110,7 +110,7 @@ func (v Viewport) View() string {
 		header += fmt.Sprintf(" :: %s", v.spinner.View())
 	}
 	footer := fmt.Sprintf(" %3.f%%", v.viewport.ScrollPercent()*100)
-	footerLead := "Back (RMB) Forward (->) Close tab (q) Quit (ctrl+c) "
+	footerLead := "Back (RMB) Forward (->) Bookmark (b) Download (d) Close tab (q) Quit (ctrl+c) "
 	gapSize := v.viewport.Width - gemtext.RuneCount(footer) - gemtext.RuneCount(footerLead)
 	footer = footerLead + strings.Repeat("─", gapSize) + footer
 
