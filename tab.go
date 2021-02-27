@@ -386,7 +386,12 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (func() tea.Msg, boo
 	loading := true
 
 	return func() tea.Msg {
+		// Cancel previous load
+		if tab.cancel != nil {
+			tab.cancel()
+		}
 		defer cancel()
+
 		log.Print(url)
 		u, err := neturl.Parse(url)
 		if err != nil {
@@ -401,9 +406,6 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (func() tea.Msg, boo
 		}
 		if u.Scheme != "gemini" {
 			return &LoadError{err: nil, message: "Incorrect protocol"}
-		}
-		if tab.cancel != nil {
-			tab.cancel()
 		}
 		resp, err := tab.client.LoadURL(ctx, *u, true)
 		if err := ctx.Err(); err != nil {
