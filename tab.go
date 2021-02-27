@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"git.sr.ht/~rafael/gemini-browser/gemini"
 	"git.sr.ht/~rafael/gemini-browser/internal/bookmark"
@@ -381,7 +382,7 @@ func (gi *GeminiResponse) DownloadTo(path string) error {
 }
 
 func (tab Tab) loadURL(url string, addHist bool, level int) (func() tea.Msg, bool, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	loading := true
 
 	return func() tea.Msg {

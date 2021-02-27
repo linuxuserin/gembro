@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"git.sr.ht/~rafael/gemini-browser/gemini"
 	"git.sr.ht/~rafael/gemini-browser/internal/bookmark"
@@ -55,11 +58,43 @@ func main() {
 
 	cacheDir := flag.String("cache-dir", "", "Directory to store cache files")
 	url := flag.String("url", "", "URL to start with")
+	debug := flag.String("debug", "", "Debug an URL")
 	flag.Parse()
+
+	if *debug != "" {
+		if err := debugURL(*cacheDir, *debug); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	if err := run(*cacheDir, *url); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func debugURL(cacheDir, url string) error {
+	u, err := neturl.Parse(url)
+	if err != nil {
+		return fmt.Errorf("could not parse URL: %w", err)
+	}
+	if u.Scheme != "gemini" {
+		return fmt.Errorf("non-gemini scheme")
+	}
+	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Start loading %q\n", url)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	resp, err := client.LoadURL(ctx, *u, false)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(resp.Header)
+	return nil
 }
 
 func run(cacheDir, url string) error {
