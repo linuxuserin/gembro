@@ -14,6 +14,7 @@ import (
 
 	"git.sr.ht/~rafael/gembro/gemini"
 	"git.sr.ht/~rafael/gembro/internal/bookmark"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 )
@@ -235,7 +236,7 @@ func (m model) selectTab(tab int) (model, tea.Cmd) {
 		m.currentTab = tab
 		var cmd tea.Cmd
 		m.tabs[m.currentTab], cmd = m.tabs[m.currentTab].Update(m.lastWindowMsg)
-		return m, cmd
+		return m, tea.Batch(cmd, spinner.Tick)
 	}
 	return m, nil
 }
