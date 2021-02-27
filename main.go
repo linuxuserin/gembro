@@ -102,11 +102,13 @@ func run(cacheDir, url string) error {
 		return err
 	}
 
+	seqID := tabID(1)
 	p := tea.NewProgram(model{
-		client:    client,
-		bookmarks: bs,
+		client:     client,
+		bookmarks:  bs,
+		sequenceID: seqID,
 		tabs: []Tab{
-			NewTab(client, url, bs),
+			NewTab(client, url, bs, seqID),
 		},
 	})
 	p.EnterAltScreen()
@@ -125,12 +127,17 @@ const (
 	modeMessage
 )
 
+type TabEvent interface {
+	Tab() tabID
+}
+
 type model struct {
 	tabs          []Tab
 	currentTab    int
 	lastWindowMsg tea.WindowSizeMsg
 	client        *gemini.Client
 	bookmarks     *bookmark.Store
+	sequenceID    tabID
 }
 
 func (m model) Init() tea.Cmd {
@@ -157,6 +164,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.openNewTab("", true)
 			}
 		}
+	case TabEvent:
+		for i, tab := range m.tabs {
+			if tab.id != msg.Tab() {
+				continue
+			}
+			log.Printf("Tab event %T for tab %d", msg, tab.id)
+			m.tabs[i], cmd = tab.Update(msg)
+			break
+		}
+		return m, cmd
 	case OpenNewTabEvent:
 		return m.openNewTab(msg.URL, msg.Switch)
 	case CloseCurrentTabEvent:
@@ -192,7 +209,8 @@ func (m model) View() string {
 func (m model) openNewTab(url string, switchTo bool) (model, tea.Cmd) {
 	var cmd tea.Cmd
 	if len(m.tabs) < 9 {
-		m.tabs = append(m.tabs, NewTab(m.client, url, m.bookmarks))
+		m.sequenceID++
+		m.tabs = append(m.tabs, NewTab(m.client, url, m.bookmarks, m.sequenceID))
 		if switchTo {
 			cmd = fireEvent(SelectTabEvent{Tab: len(m.tabs) - 1})
 		}

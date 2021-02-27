@@ -31,7 +31,10 @@ const (
 	messageLoadExternal
 )
 
+type tabID uint64
+
 type Tab struct {
+	id           tabID
 	mode         mode
 	input        Input
 	message      Message
@@ -43,13 +46,14 @@ type Tab struct {
 	lastResponse GeminiResponse
 }
 
-func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store) Tab {
+func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store, id tabID) Tab {
 	ti := textinput.NewModel()
 	ti.Placeholder = ""
 	ti.CharLimit = 255
 	ti.Width = 80
 
 	return Tab{
+		id:        id,
 		mode:      modePage,
 		client:    client,
 		history:   &history.History{},
@@ -67,7 +71,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	switch msg := msg.(type) {
 	case error:
 		log.Printf("%[1]T %[1]v", msg)
-		var le *LoadError
+		var le LoadError
 		if errors.As(msg, &le) {
 			log.Print(le.Unwrap())
 			tab.viewport.loading = false
@@ -191,22 +195,32 @@ func (tab Tab) homeContent() string {
 type LoadError struct {
 	err     error
 	message string
+	tab     tabID
 }
 
-func (le *LoadError) Unwrap() error {
+func (le LoadError) Unwrap() error {
 	return le.err
 }
 
-func (le *LoadError) Error() string {
+func (le LoadError) Error() string {
 	if le.err != nil {
 		return fmt.Sprintf("%s: %s", le.message, le.err.Error())
 	}
 	return le.message
 }
 
+func (le LoadError) Tab() tabID {
+	return le.tab
+}
+
 type GeminiResponse struct {
 	*gemini.Response
 	level int
+	tab   tabID
+}
+
+func (gr GeminiResponse) Tab() tabID {
+	return gr.tab
 }
 
 func (gi *GeminiResponse) DownloadTo(path string) error {
@@ -271,19 +285,19 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 				tab.history.Add(url)
 			}
 			return GeminiResponse{Response: &gemini.Response{Body: tab.homeContent(),
-				URL: url, Header: gemini.Header{Status: 2, Meta: "text/gemini"}}, level: level}
+				URL: url, Header: gemini.Header{Status: 2, Meta: "text/gemini"}}, level: level, tab: tab.id}
 		}
 		resp, err := tab.client.LoadURL(ctx, *u, true)
 		if err := ctx.Err(); err != nil {
-			return &LoadError{err: err, message: "Could not load URL"}
+			return LoadError{err: err, message: "Could not load URL", tab: tab.id}
 		}
 		if err != nil {
-			return &LoadError{err: err, message: "Could not load URL"}
+			return LoadError{err: err, message: "Could not load URL", tab: tab.id}
 		}
 		if addHist {
 			tab.history.Add(u.String())
 		}
-		return GeminiResponse{Response: resp, level: level}
+		return GeminiResponse{Response: resp, level: level, tab: tab.id}
 	}
 	return tab, tea.Batch(cmd, spinner.Tick)
 }
