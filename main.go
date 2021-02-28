@@ -29,7 +29,6 @@ const (
 
 const (
 	headerHeight = 3
-	footerHeight = 1
 )
 
 var builtinBookmarks = []bookmark.Bookmark{

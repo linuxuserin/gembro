@@ -13,9 +13,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const (
+	buttonBack     = "Back"
+	buttonFwd      = "Forward"
+	buttonHome     = "Home"
+	buttonBookmark = "Bookmark"
+	buttonDownload = "Download"
+	buttonGoto     = "Goto"
+	buttonCloseTab = "Close Tab"
+	buttonQuit     = "Quit"
+)
+
 type Viewport struct {
 	viewport viewport.Model
 	spinner  spinner.Model
+	footer   Footer
 	ready    bool
 	loading  bool
 	URL      string
@@ -29,10 +41,12 @@ type Viewport struct {
 func NewViewport(startURL string, h *history.History) Viewport {
 	s := spinner.NewModel()
 	s.Spinner = spinner.Points
+	// footerLead := "Back (RMB) Forward (->) Home (h) Bookmark (b) Download (d) Close tab (q) Quit (ctrl+c) "
 	return Viewport{
 		URL:     startURL,
 		spinner: s,
 		history: h,
+		footer:  NewFooter(buttonBack, buttonFwd, buttonHome, buttonBookmark, buttonDownload, buttonQuit),
 	}
 }
 
@@ -88,31 +102,58 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q":
-			return v, fireEvent(CloseCurrentTabEvent{})
+			return v, v.handleButtonClick(buttonCloseTab)
 		case "g":
-			return v, fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav, Payload: ""})
+			return v, v.handleButtonClick(buttonGoto)
 		case "d":
-			return v, fireEvent(ShowInputEvent{Message: "Download to", Value: suggestDownloadPath(v.title),
-				Type: inputDownloadSrc})
+			return v, v.handleButtonClick(buttonDownload)
 		case "h":
-			return v, fireEvent(LoadURLEvent{URL: "home://", AddHistory: true})
+			return v, v.handleButtonClick(buttonHome)
 		case "b":
-			return v, fireEvent(ToggleBookmarkEvent{URL: v.URL, Title: v.title})
+			return v, v.handleButtonClick(buttonBookmark)
 		case "left":
-			return v, fireEvent(GoBackEvent{})
+			return v, v.handleButtonClick(buttonBack)
 		case "right":
-			return v, fireEvent(GoForwardEvent{})
+			return v, v.handleButtonClick(buttonFwd)
 		}
+	case ButtonClickEvent:
+		return v, v.handleButtonClick(msg.Button)
 	}
 
 	if v.loading {
 		v.spinner, cmd = v.spinner.Update(msg)
 		cmds = append(cmds, cmd)
 	}
+	v.footer, cmd = v.footer.Update(msg)
+	cmds = append(cmds, cmd)
 	v.viewport, cmd = v.viewport.Update(msg)
 	cmds = append(cmds, cmd)
 
 	return v, tea.Batch(cmds...)
+}
+
+func (v Viewport) handleButtonClick(btn string) tea.Cmd {
+	switch btn {
+	case buttonBack:
+		return fireEvent(GoBackEvent{})
+	case buttonFwd:
+		return fireEvent(GoForwardEvent{})
+	case buttonHome:
+		return fireEvent(LoadURLEvent{URL: "home://", AddHistory: true})
+	case buttonBookmark:
+		return fireEvent(ToggleBookmarkEvent{URL: v.URL, Title: v.title})
+	case buttonDownload:
+		return fireEvent(ShowInputEvent{Message: "Download to", Value: suggestDownloadPath(v.title),
+			Type: inputDownloadSrc})
+	case buttonGoto:
+		return fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav, Payload: ""})
+	case buttonCloseTab:
+		return fireEvent(CloseCurrentTabEvent{})
+	case buttonQuit:
+		return fireEvent(QuitEvent{})
+	default:
+		return nil
+	}
 }
 
 func (v Viewport) View() string {
@@ -125,7 +166,7 @@ func (v Viewport) View() string {
 		header += fmt.Sprintf(" :: %s", v.spinner.View())
 	}
 	footer := fmt.Sprintf(" %3.f%%", v.viewport.ScrollPercent()*100)
-	footerLead := "Back (RMB) Forward (->) Home (h) Bookmark (b) Download (d) Close tab (q) Quit (ctrl+c) "
+	footerLead := v.footer.View()
 	gapSize := v.viewport.Width - gemtext.RuneCount(footer) - gemtext.RuneCount(footerLead)
 	if gapSize < 0 {
 		gapSize = 0
@@ -162,6 +203,12 @@ func (viewport Viewport) handleMouse(msg tea.MouseMsg) (Viewport, tea.Cmd) {
 				} else {
 					return viewport, fireEvent(SelectTabEvent{Tab: sel})
 				}
+			}
+			if msg.Y == 1 {
+				return viewport, fireEvent(ButtonClickEvent{buttonGoto})
+			}
+			if msg.Y >= viewport.viewport.Height+headerHeight {
+				return viewport, fireEvent(FooterClickEvent{msg})
 			}
 			ypos := viewport.viewport.YOffset + msg.Y - headerHeight
 			if link := viewport.findLinkY(ypos); link != nil {
