@@ -27,4 +27,6 @@ go build
 
 ## Todo
 
+- Help screen
+- Turn button bar in clickable buttons
 - Fix download name and extension (consider media type)
