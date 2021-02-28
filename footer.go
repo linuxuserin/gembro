@@ -37,12 +37,14 @@ func (f Footer) Update(msg tea.Msg) (Footer, tea.Cmd) {
 	return f, nil
 }
 
-func (f Footer) View() string {
+func (f Footer) View() (string, int) {
 	var buf strings.Builder
+	var width int
 	for _, b := range f.buttons {
 		fmt.Fprintf(&buf, "[%s] ", gemtext.Color(b, gemtext.Clink))
+		width += len(b) + 3
 	}
-	return buf.String()
+	return buf.String(), width
 }
 
 func (f Footer) GetButtonOnX(x int) string {

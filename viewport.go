@@ -146,7 +146,11 @@ func (v Viewport) handleButtonClick(btn string) tea.Cmd {
 		return fireEvent(ShowInputEvent{Message: "Download to", Value: suggestDownloadPath(v.title),
 			Type: inputDownloadSrc})
 	case buttonGoto:
-		return fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav, Payload: ""})
+		var val string
+		if cur := v.history.Current(); cur != "home://" {
+			val = cur
+		}
+		return fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav, Payload: "", Value: val})
 	case buttonCloseTab:
 		return fireEvent(CloseCurrentTabEvent{})
 	case buttonQuit:
@@ -166,8 +170,9 @@ func (v Viewport) View() string {
 		header += fmt.Sprintf(" :: %s", v.spinner.View())
 	}
 	footer := fmt.Sprintf(" %3.f%%", v.viewport.ScrollPercent()*100)
-	footerLead := v.footer.View()
-	gapSize := v.viewport.Width - gemtext.RuneCount(footer) - gemtext.RuneCount(footerLead)
+	footerLead, fwidth := v.footer.View()
+	gapSize := v.viewport.Width - gemtext.RuneCount(footer) - fwidth
+	log.Printf("gap: %v %v %v", v.viewport.Width, gemtext.RuneCount(footer), fwidth)
 	if gapSize < 0 {
 		gapSize = 0
 	}
