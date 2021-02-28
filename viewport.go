@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"git.sr.ht/~rafael/gembro/gemini/gemtext"
+	"git.sr.ht/~rafael/gembro/internal/history"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,14 +23,16 @@ type Viewport struct {
 	title     string
 	links     []gemtext.LinkPos
 	lastEvent tea.MouseEventType
+	history   *history.History
 }
 
-func NewViewport(startURL string) Viewport {
+func NewViewport(startURL string, h *history.History) Viewport {
 	s := spinner.NewModel()
 	s.Spinner = spinner.Points
 	return Viewport{
 		URL:     startURL,
 		spinner: s,
+		history: h,
 	}
 }
 
@@ -74,7 +77,7 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 			if startURL == "" {
 				startURL = "home://"
 			}
-			return v, fireEvent(LoadURLEvent{URL: startURL, AddHistory: true})
+			return v, fireEvent(LoadURLEvent{URL: startURL, AddHistory: v.history.Current() != startURL})
 		} else {
 			v.viewport.Width = msg.Width
 			v.viewport.Height = msg.Height - verticalMargins

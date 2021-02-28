@@ -8,12 +8,15 @@ import (
 	"log"
 	neturl "net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"git.sr.ht/~rafael/gembro/gemini"
 	"git.sr.ht/~rafael/gembro/internal/bookmark"
+	"git.sr.ht/~rafael/gembro/internal/history"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
@@ -103,14 +106,17 @@ func run(cacheDir, url string) error {
 		return err
 	}
 
-	seqID := tabID(1)
+	historyPath := filepath.Join(cacheDir, "history.json")
+	tabs, seqID, err := loadTabs(historyPath, client, bs)
+	if err != nil {
+		return err
+	}
 	p := tea.NewProgram(model{
-		client:     client,
-		bookmarks:  bs,
-		sequenceID: seqID,
-		tabs: []Tab{
-			NewTab(client, url, bs, seqID),
-		},
+		client:      client,
+		bookmarks:   bs,
+		sequenceID:  seqID,
+		tabs:        tabs,
+		historyPath: historyPath,
 	})
 	p.EnterAltScreen()
 	defer p.ExitAltScreen()
@@ -135,26 +141,41 @@ type TabEvent interface {
 type model struct {
 	tabs          []Tab
 	currentTab    int
+	historyPath   string
 	lastWindowMsg tea.WindowSizeMsg
 	client        *gemini.Client
 	bookmarks     *bookmark.Store
 	sequenceID    tabID
 }
 
+type QuitEvent struct{}
+
 func (m model) Init() tea.Cmd {
-	return nil
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGTERM)
+
+	return func() tea.Msg {
+		<-sigs
+		return QuitEvent{}
+	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	log.Printf("Event: %T", msg)
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.lastWindowMsg = msg
+	case QuitEvent:
+		if err := m.saveHistory(m.historyPath); err != nil {
+			log.Print(err)
+		}
+		return m, tea.Quit
 	case tea.KeyMsg:
 		keys := msg.String()
 		switch keys {
 		case "ctrl+c":
-			return m, tea.Quit
+			return m, fireEvent(QuitEvent{})
 		}
 		if msg.Alt && len(msg.Runes) == 1 && '1' <= msg.Runes[0] && msg.Runes[0] <= '9' {
 			num := int(msg.Runes[0] - '0')
@@ -211,7 +232,7 @@ func (m model) openNewTab(url string, switchTo bool) (model, tea.Cmd) {
 	var cmd tea.Cmd
 	if len(m.tabs) < 9 {
 		m.sequenceID++
-		m.tabs = append(m.tabs, NewTab(m.client, url, m.bookmarks, m.sequenceID))
+		m.tabs = append(m.tabs, NewTab(m.client, url, m.bookmarks, nil, m.sequenceID))
 		if switchTo {
 			cmd = fireEvent(SelectTabEvent{Tab: len(m.tabs) - 1})
 		}
@@ -239,4 +260,44 @@ func (m model) selectTab(tab int) (model, tea.Cmd) {
 		return m, tea.Batch(cmd, spinner.Tick)
 	}
 	return m, nil
+}
+
+func (m model) saveHistory(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("could not open history file: %w", err)
+	}
+	defer f.Close()
+	for i := range m.tabs {
+		if err := m.tabs[i].history.ToJSON(f); err != nil {
+			return fmt.Errorf("could not write history: %w", err)
+		}
+	}
+	return nil
+}
+
+func loadTabs(historyPath string, client *gemini.Client, bs *bookmark.Store) ([]Tab, tabID, error) {
+	seqID := tabID(1)
+	f, err := os.Open(historyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Tab{
+				NewTab(client, "", bs, nil, seqID),
+			}, seqID + 1, nil
+		}
+		return nil, 0, fmt.Errorf("could not load history file: %w", err)
+	}
+	defer f.Close()
+
+	hs, err := history.FromJSON(f)
+	if err != nil {
+		return nil, 0, fmt.Errorf("could not decode history: %w", err)
+	}
+	var tabs []Tab
+	for _, h := range hs {
+		tab := NewTab(client, h.Current(), bs, h, seqID)
+		tabs = append(tabs, tab)
+		seqID++
+	}
+	return tabs, seqID, nil
 }

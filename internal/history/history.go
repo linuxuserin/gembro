@@ -1,7 +1,9 @@
 package history
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 )
 
@@ -31,6 +33,15 @@ func (h *History) Back() (string, bool) {
 	return "", false
 }
 
+func (h *History) Current() string {
+	h.Lock()
+	defer h.Unlock()
+	if len(h.urls) == 0 {
+		return ""
+	}
+	return h.urls[h.pos]
+}
+
 func (h *History) Forward() (string, bool) {
 	h.Lock()
 	defer h.Unlock()
@@ -45,4 +56,32 @@ func (h *History) Status() string {
 	h.Lock()
 	defer h.Unlock()
 	return fmt.Sprintf("Count=%d, Pos=%d", len(h.urls), h.pos)
+}
+
+type jsonData struct {
+	URLs []string
+	Pos  int
+}
+
+func (h *History) ToJSON(out io.Writer) error {
+	h.Lock()
+	defer h.Unlock()
+	j := jsonData{h.urls, h.pos}
+	return json.NewEncoder(out).Encode(&j)
+}
+
+func FromJSON(in io.Reader) ([]*History, error) {
+	dec := json.NewDecoder(in)
+	var hs []*History
+	for {
+		var j jsonData
+		if err := dec.Decode(&j); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		hs = append(hs, &History{urls: j.URLs, pos: j.Pos})
+	}
+	return hs, nil
 }

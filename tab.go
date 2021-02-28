@@ -46,19 +46,21 @@ type Tab struct {
 	lastResponse GeminiResponse
 }
 
-func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store, id tabID) Tab {
+func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store, h *history.History, id tabID) Tab {
 	ti := textinput.NewModel()
 	ti.Placeholder = ""
 	ti.CharLimit = 255
 	ti.Width = 80
-
+	if h == nil {
+		h = &history.History{}
+	}
 	return Tab{
 		id:        id,
 		mode:      modePage,
 		client:    client,
-		history:   &history.History{},
+		history:   h,
 		input:     NewInput(),
-		viewport:  NewViewport(startURL),
+		viewport:  NewViewport(startURL, h),
 		message:   Message{},
 		bookmarks: bs,
 	}

@@ -27,5 +27,4 @@ go build
 
 ## Todo
 
-- Resume session
-- Handle other media types (than text/gemini) (again)
+- Fix download name and extension (consider media type)
