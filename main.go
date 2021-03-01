@@ -38,8 +38,7 @@ var builtinBookmarks = []bookmark.Bookmark{
 }
 
 func main() {
-	cacheDir := flag.String("cache-dir", "", "Directory to store cache files (like cert info and bookmarks)")
-	url := flag.String("url", "", "URL to start with")
+	cacheDir := flag.String("cache-dir", "cache", "Directory to store cache files (like cert info and bookmarks)")
 	debug := flag.String("debug-url", "", "Debug an URL")
 	logFile := flag.String("log-file", "", "File to output log to")
 	flag.Parse()
@@ -51,6 +50,12 @@ func main() {
 			log.Fatal(err)
 		}
 		return
+	}
+
+	if _, err := os.Stat(*cacheDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(*cacheDir, 0777); err != nil {
+			log.Fatalf("could not make cache dir: %s", err)
+		}
 	}
 
 	if *logFile != "" {
@@ -65,7 +70,7 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
-	if err := run(*cacheDir, *url); err != nil {
+	if err := run(*cacheDir); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -94,7 +99,7 @@ func debugURL(cacheDir, url string) error {
 	return nil
 }
 
-func run(cacheDir, url string) error {
+func run(cacheDir string) error {
 	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName))
 	if err != nil {
 		return err
