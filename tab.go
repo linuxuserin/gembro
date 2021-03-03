@@ -261,6 +261,9 @@ func (tab Tab) handleResponse(resp GeminiResponse) (Tab, tea.Cmd) {
 }
 
 func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
+	if !strings.Contains(url, "://") {
+		url = fmt.Sprintf("gemini://%s", url)
+	}
 	if url != "home://" && !strings.HasPrefix(url, "gemini://") {
 		tab.viewport.loading = false
 		return tab.showMessage(fmt.Sprintf("Open %q externally?", url), url, messageLoadExternal, true)
@@ -275,19 +278,17 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 	cmd := func() tea.Msg {
 		defer cancel()
 
-		if !strings.Contains(url, "://") {
-			url = fmt.Sprintf("gemini://%s", url)
-		}
-		u, err := neturl.Parse(url)
-		if err != nil {
-			return err
-		}
 		if url == "home://" {
 			if addHist {
 				tab.history.Add(url)
 			}
 			return GeminiResponse{Response: &gemini.Response{Body: tab.homeContent(),
 				URL: url, Header: gemini.Header{Status: 2, Meta: "text/gemini"}}, level: level, tab: tab.id}
+		}
+
+		u, err := neturl.Parse(url)
+		if err != nil {
+			return err
 		}
 		resp, err := tab.client.LoadURL(ctx, *u, true)
 		if err := ctx.Err(); err != nil {

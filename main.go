@@ -41,6 +41,7 @@ func main() {
 	cacheDir := flag.String("cache-dir", "", "Directory to store cache files (like cert info and bookmarks)")
 	debug := flag.String("debug-url", "", "Debug an URL")
 	logFile := flag.String("log-file", "", "File to output log to")
+	url := flag.String("url", "", "Load this URL")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -79,7 +80,7 @@ func main() {
 		log.Printf("cache dir: %s", *cacheDir)
 	}
 
-	if err := run(*cacheDir); err != nil {
+	if err := run(*cacheDir, *url); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -108,7 +109,7 @@ func debugURL(cacheDir, url string) error {
 	return nil
 }
 
-func run(cacheDir string) error {
+func run(cacheDir, url string) error {
 	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName))
 	if err != nil {
 		return err
@@ -120,7 +121,7 @@ func run(cacheDir string) error {
 	}
 
 	historyPath := filepath.Join(cacheDir, "history.json")
-	tabs, seqID, err := loadTabs(historyPath, client, bs)
+	tabs, seqID, err := loadTabs(historyPath, client, bs, url)
 	if err != nil {
 		return err
 	}
@@ -289,13 +290,13 @@ func (m model) saveHistory(path string) error {
 	return nil
 }
 
-func loadTabs(historyPath string, client *gemini.Client, bs *bookmark.Store) ([]Tab, tabID, error) {
+func loadTabs(historyPath string, client *gemini.Client, bs *bookmark.Store, startURL string) ([]Tab, tabID, error) {
 	seqID := tabID(1)
 	f, err := os.Open(historyPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []Tab{
-				NewTab(client, "", bs, nil, seqID),
+				NewTab(client, startURL, bs, nil, seqID),
 			}, seqID + 1, nil
 		}
 		return nil, 0, fmt.Errorf("could not load history file: %w", err)
@@ -308,7 +309,11 @@ func loadTabs(historyPath string, client *gemini.Client, bs *bookmark.Store) ([]
 	}
 	var tabs []Tab
 	for _, h := range hs {
-		tab := NewTab(client, h.Current(), bs, h, seqID)
+		u := startURL
+		if u == "" {
+			u = h.Current()
+		}
+		tab := NewTab(client, u, bs, h, seqID)
 		tabs = append(tabs, tab)
 		seqID++
 	}
