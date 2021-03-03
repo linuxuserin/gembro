@@ -226,7 +226,7 @@ func (gr GeminiResponse) Tab() tabID {
 }
 
 func (gi *GeminiResponse) DownloadTo(path string) error {
-	err := os.WriteFile(path, gi.Source, 0644)
+	err := os.WriteFile(path, gi.Body, 0644)
 	if err != nil {
 		return fmt.Errorf("could not complete download: %w", err)
 	}
@@ -282,7 +282,7 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 			if addHist {
 				tab.history.Add(url)
 			}
-			return GeminiResponse{Response: &gemini.Response{Body: tab.homeContent(),
+			return GeminiResponse{Response: &gemini.Response{Body: []byte(tab.homeContent()),
 				URL: url, Header: gemini.Header{Status: 2, Meta: "text/gemini"}}, level: level, tab: tab.id}
 		}
 

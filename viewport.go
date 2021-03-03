@@ -25,12 +25,12 @@ const (
 )
 
 type Viewport struct {
-	viewport viewport.Model
-	spinner  spinner.Model
-	footer   Footer
-	ready    bool
-	loading  bool
-	URL      string
+	viewport       viewport.Model
+	spinner        spinner.Model
+	footer         Footer
+	ready          bool
+	loading        bool
+	URL, MediaType string
 
 	title     string
 	links     []gemtext.LinkPos
@@ -52,6 +52,7 @@ func NewViewport(startURL string, h *history.History) Viewport {
 
 func (v Viewport) SetContent(content, url, mediaType string) Viewport {
 	v.URL = url
+	v.MediaType = mediaType
 	u, _ := neturl.Parse(url)
 	var s string
 
@@ -143,8 +144,9 @@ func (v Viewport) handleButtonClick(btn string) tea.Cmd {
 	case buttonBookmark:
 		return fireEvent(ToggleBookmarkEvent{URL: v.URL, Title: v.title})
 	case buttonDownload:
-		return fireEvent(ShowInputEvent{Message: "Download to", Value: suggestDownloadPath(v.title),
-			Type: inputDownloadSrc})
+		return fireEvent(ShowInputEvent{Message: "Download to",
+			Value: suggestDownloadPath(v.title, v.URL, v.MediaType),
+			Type:  inputDownloadSrc})
 	case buttonGoto:
 		var val string
 		if cur := v.history.Current(); cur != "home://" {

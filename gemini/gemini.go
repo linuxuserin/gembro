@@ -2,7 +2,6 @@ package gemini
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -44,28 +43,10 @@ func readHeader(in *bufio.Reader) (*Header, error) {
 	return &h, nil
 }
 
-func readBody(in *bufio.Reader) (string, error) {
-	var s strings.Builder
-	for {
-		line, err := in.ReadString('\n')
-		if line != "" {
-			s.WriteString(strings.TrimRight(line, "\r"))
-		}
-		if err != nil {
-			if err != io.EOF {
-				return "", fmt.Errorf("read error: %s", err)
-			}
-			break
-		}
-	}
-	return s.String(), nil
-}
-
 type Response struct {
-	Body   string
 	Header Header
 	URL    string
-	Source []byte
+	Body   []byte
 }
 
 type Client struct {
@@ -83,9 +64,13 @@ func NewClient(certsPath string) (*Client, error) {
 func (r *Response) GetBody() (string, error) {
 	e, _, certain := charset.DetermineEncoding(nil, r.Header.Meta)
 	if !certain {
-		return r.Body, nil
+		return string(r.Body), nil
 	}
-	return e.NewDecoder().String(r.Body)
+	body, err := e.NewDecoder().Bytes(r.Body)
+	if err != nil {
+		return "", fmt.Errorf("could not decode body: %w", err)
+	}
+	return string(body), nil
 }
 
 func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool) (*Response, error) {
@@ -115,26 +100,22 @@ func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool
 		return nil, fmt.Errorf("could not send url: %w", err)
 	}
 
-	var buf bytes.Buffer
-	rdr := bufio.NewReader(io.TeeReader(io.LimitReader(conn, 1024*1024), &buf))
+	rdr := bufio.NewReader(io.LimitReader(conn, 1024*1024))
 	header, err := readHeader(rdr)
 	if err != nil {
 		return nil, err
 	}
 
 	resp := &Response{Header: *header, URL: surl.String()}
-	defer func() {
-		resp.Source = buf.Bytes()
-	}()
 	switch header.Status {
 	case 1: // input
 		return resp, nil
 	case 2: // success
-		body, err := readBody(rdr)
+		data, err := io.ReadAll(rdr)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not ready body: %w", err)
 		}
-		resp.Body = body
+		resp.Body = data
 		return resp, nil
 	default:
 		return resp, nil
