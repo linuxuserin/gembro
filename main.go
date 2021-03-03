@@ -38,7 +38,7 @@ var builtinBookmarks = []bookmark.Bookmark{
 }
 
 func main() {
-	cacheDir := flag.String("cache-dir", "cache", "Directory to store cache files (like cert info and bookmarks)")
+	cacheDir := flag.String("cache-dir", "", "Directory to store cache files (like cert info and bookmarks)")
 	debug := flag.String("debug-url", "", "Debug an URL")
 	logFile := flag.String("log-file", "", "File to output log to")
 	flag.Parse()
@@ -52,12 +52,6 @@ func main() {
 		return
 	}
 
-	if _, err := os.Stat(*cacheDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(*cacheDir, 0777); err != nil {
-			log.Fatalf("could not make cache dir: %s", err)
-		}
-	}
-
 	if *logFile != "" {
 		f, err := os.OpenFile(*logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 		if err != nil {
@@ -68,6 +62,21 @@ func main() {
 		log.SetOutput(f)
 	} else {
 		log.SetOutput(io.Discard)
+	}
+
+	if *cacheDir == "" {
+		c, err := os.UserCacheDir()
+		if err != nil {
+			log.Print(err)
+			c = ".cache"
+		}
+		*cacheDir = filepath.Join(c, "gembro")
+		if _, err := os.Stat(*cacheDir); os.IsNotExist(err) {
+			if err := os.MkdirAll(*cacheDir, 0777); err != nil {
+				log.Print(err)
+			}
+		}
+		log.Printf("cache dir: %s", *cacheDir)
 	}
 
 	if err := run(*cacheDir); err != nil {
