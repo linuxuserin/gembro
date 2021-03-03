@@ -89,6 +89,9 @@ func (r *Response) GetBody() (string, error) {
 }
 
 func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool) (*Response, error) {
+	if surl.Path == "" {
+		surl.Path = "/"
+	}
 	port := surl.Port()
 	if port == "" {
 		port = "1965"
