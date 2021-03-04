@@ -167,14 +167,17 @@ func (v Viewport) View() string {
 		return "\n  Initalizing..."
 	}
 
-	header := fmt.Sprintln(v.URL)
+	var headerTail string
 	if v.loading {
-		header += fmt.Sprintf(" :: %s", v.spinner.View())
+		headerTail = fmt.Sprintf(" :: %s", v.spinner.View())
 	}
+	header := fmt.Sprintf("%s%s ", v.URL, headerTail)
+	gapSize := v.viewport.Width - gemtext.RuneCount(header)
+	header += strings.Repeat("─", gapSize)
+
 	footer := fmt.Sprintf(" %3.f%%", v.viewport.ScrollPercent()*100)
 	footerLead, fwidth := v.footer.View()
-	gapSize := v.viewport.Width - gemtext.RuneCount(footer) - fwidth
-	log.Printf("gap: %v %v %v", v.viewport.Width, gemtext.RuneCount(footer), fwidth)
+	gapSize = v.viewport.Width - gemtext.RuneCount(footer) - fwidth
 	if gapSize < 0 {
 		gapSize = 0
 	}
