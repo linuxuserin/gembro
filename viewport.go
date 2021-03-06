@@ -6,7 +6,7 @@ import (
 	neturl "net/url"
 	"strings"
 
-	"git.sr.ht/~rafael/gembro/gemini/gemtext"
+	"git.sr.ht/~rafael/gembro/gemini"
 	"git.sr.ht/~rafael/gembro/gopher"
 	"git.sr.ht/~rafael/gembro/internal/history"
 	"git.sr.ht/~rafael/gembro/text"
@@ -65,13 +65,13 @@ func (v Viewport) SetGoperContent(data []byte, url string, typ byte) Viewport {
 	v.title = "Gopher"
 	var content string
 	content, v.links = gopher.ToANSI(data, typ)
-	content = gemtext.ApplyMargin(content, v.viewport.Width)
+	content = text.ApplyMargin(content, v.viewport.Width, gopher.TextWidth)
 	v.viewport.SetContent(content)
 	v.viewport.GotoTop()
 	return v
 }
 
-func (v Viewport) SetContent(content, url, mediaType string) Viewport {
+func (v Viewport) SetGeminiContent(content, url, mediaType string) Viewport {
 	v.URL = url
 	v.MediaType = mediaType
 	u, _ := neturl.Parse(url)
@@ -79,10 +79,10 @@ func (v Viewport) SetContent(content, url, mediaType string) Viewport {
 
 	switch mediaType := strings.Split(mediaType, ";")[0]; mediaType {
 	case "text/gemini":
-		s, v.links, v.title = gemtext.ToANSI(content, v.viewport.Width, *u)
+		s, v.links, v.title = gemini.ToANSI(content, v.viewport.Width, *u)
 	default:
 		if strings.HasPrefix(mediaType, "text/") {
-			s = gemtext.ApplyMargin(content, v.viewport.Width)
+			s = text.ApplyMargin(content, v.viewport.Width, gemini.TextWidth)
 			v.links = text.Links{}
 			v.title = url
 		} else {

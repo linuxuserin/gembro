@@ -138,10 +138,8 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			return tab.showMessage(m, msg.URL, messageDelBookmark, true)
 		}
 		return tab.showInput("Name", msg.Title, msg.URL, inputBookmark)
-	case GeminiResponse:
+	case ServerResponse:
 		return tab.handleResponse(msg)
-	case GopherResponse:
-		return tab.handleGopherResponse(msg)
 	}
 
 	switch tab.mode {
@@ -236,14 +234,6 @@ func (gr GeminiResponse) GetData() []byte {
 	return gr.Body
 }
 
-func DownloadTo(resp ServerResponse, path string) error {
-	err := os.WriteFile(path, resp.GetData(), 0644)
-	if err != nil {
-		return fmt.Errorf("could not complete download: %w", err)
-	}
-	return nil
-}
-
 type GopherResponse struct {
 	*gopher.Response
 	tab tabID
@@ -257,38 +247,48 @@ func (gr GopherResponse) Tab() tabID {
 	return gr.tab
 }
 
-func (tab Tab) handleGopherResponse(resp GopherResponse) (Tab, tea.Cmd) {
-	tab.viewport.loading = false
-	tab.viewport = tab.viewport.SetGoperContent(resp.Data, resp.URL, resp.Type)
-	tab.lastResponse = resp
-	return tab, nil
+func DownloadTo(resp ServerResponse, path string) error {
+	err := os.WriteFile(path, resp.GetData(), 0644)
+	if err != nil {
+		return fmt.Errorf("could not complete download: %w", err)
+	}
+	return nil
 }
 
-func (tab Tab) handleResponse(resp GeminiResponse) (Tab, tea.Cmd) {
-	tab.viewport.loading = false
-	switch resp.Header.Status {
-	case 1:
-		return tab.showInput(resp.Header.Meta, "", resp.URL, inputQuery)
-	case 3:
-		if resp.level > 5 {
-			return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", "", messagePlain, false)
-		}
-		return tab.loadURL(resp.Header.Meta, false, resp.level+1)
-	case 4, 5, 6:
-		return tab.showMessage(fmt.Sprintf("Error: %s", resp.Header.Meta), "", messagePlain, false)
-	case 2:
-		body, err := resp.GetBody()
-		if err != nil {
-			log.Print(err)
+func (tab Tab) handleResponse(resp ServerResponse) (Tab, tea.Cmd) {
+	switch resp := resp.(type) {
+	case GopherResponse:
+		tab.viewport.loading = false
+		tab.viewport = tab.viewport.SetGoperContent(resp.Data, resp.URL, resp.Type)
+		tab.lastResponse = resp
+		return tab, nil
+	case GeminiResponse:
+		tab.viewport.loading = false
+		switch resp.Header.Status {
+		case 1:
+			return tab.showInput(resp.Header.Meta, "", resp.URL, inputQuery)
+		case 3:
+			if resp.level > 5 {
+				return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", "", messagePlain, false)
+			}
+			return tab.loadURL(resp.Header.Meta, false, resp.level+1)
+		case 4, 5, 6:
+			return tab.showMessage(fmt.Sprintf("Error: %s", resp.Header.Meta), "", messagePlain, false)
+		case 2:
+			body, err := resp.GetBody()
+			if err != nil {
+				log.Print(err)
+				return tab, nil
+			}
+			tab.lastResponse = resp
+			tab.viewport = tab.viewport.SetGeminiContent(body, resp.URL, resp.Header.Meta)
+			return tab, nil
+		default:
+			log.Print(resp.Header)
 			return tab, nil
 		}
-		tab.lastResponse = resp
-		tab.viewport = tab.viewport.SetContent(body, resp.URL, resp.Header.Meta)
-		return tab, nil
-	default:
-		log.Print(resp.Header)
-		return tab, nil
 	}
+	return tab, nil
 }
 
 func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {

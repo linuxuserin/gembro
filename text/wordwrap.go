@@ -2,6 +2,7 @@ package text
 
 import (
 	"bytes"
+	"strings"
 )
 
 const softHyphen = '\u00AD'
@@ -49,4 +50,14 @@ func LineWrap(line string, maxlen int) string {
 
 func RuneCount(s string) int {
 	return len([]rune(s))
+}
+
+func ApplyMargin(input string, availableWidth, textWidth int) string {
+	margin := (availableWidth - textWidth) / 2
+	indent := strings.Repeat(" ", margin)
+	lines := strings.Split(input, "\n")
+	for i, line := range lines {
+		lines[i] = indent + line
+	}
+	return strings.Join(lines, "\n")
 }

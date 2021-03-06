@@ -1,11 +1,10 @@
-package gemtext
+package gemini
 
 import (
 	"fmt"
 	neturl "net/url"
 	"strings"
 
-	"git.sr.ht/~rafael/gembro/gemini"
 	"git.sr.ht/~rafael/gembro/text"
 )
 
@@ -44,9 +43,9 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "=>") {
-			l, err := gemini.ParseLink(line)
+			l, err := ParseLink(line)
 			if err != nil {
-				l = &gemini.Link{URL: "", Name: "Invalid link: " + line}
+				l = &Link{URL: "", Name: "Invalid link: " + line}
 			}
 
 			furl, _ := baseURL.Parse(l.URL)
@@ -74,15 +73,5 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 	if title == "" {
 		title = baseURL.String()
 	}
-	return ApplyMargin(s.String(), availableWidth), links, title
-}
-
-func ApplyMargin(input string, availableWidth int) string {
-	margin := (availableWidth - TextWidth) / 2
-	indent := strings.Repeat(" ", margin)
-	lines := strings.Split(input, "\n")
-	for i, line := range lines {
-		lines[i] = indent + line
-	}
-	return strings.Join(lines, "\n")
+	return text.ApplyMargin(s.String(), availableWidth, TextWidth), links, title
 }
