@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"git.sr.ht/~rafael/gembro/gemini"
+	"git.sr.ht/~rafael/gembro/gopher"
 	"git.sr.ht/~rafael/gembro/internal/bookmark"
 	"git.sr.ht/~rafael/gembro/internal/history"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -43,7 +44,7 @@ type Tab struct {
 	cancel       context.CancelFunc
 	history      *history.History
 	bookmarks    *bookmark.Store
-	lastResponse GeminiResponse
+	lastResponse ServerResponse
 }
 
 func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store, h *history.History, id tabID) Tab {
@@ -87,7 +88,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		switch msg.Type {
 		case messageDelBookmark:
 			if msg.Response {
-				if err := tab.bookmarks.Remove(tab.lastResponse.URL); err != nil {
+				if err := tab.bookmarks.Remove(msg.Payload); err != nil {
 					log.Print(err)
 				}
 			}
@@ -115,7 +116,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 				log.Print(err)
 			}
 		case inputDownloadSrc:
-			if err := tab.lastResponse.DownloadTo(msg.Value); err != nil {
+			if err := DownloadTo(tab.lastResponse, msg.Value); err != nil {
 				log.Print(err)
 			}
 		}
@@ -134,11 +135,13 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	case ToggleBookmarkEvent:
 		if tab.bookmarks.Contains(msg.URL) {
 			m := fmt.Sprintf("Remove %q from bookmarks?", msg.URL)
-			return tab.showMessage(m, "", messageDelBookmark, true)
+			return tab.showMessage(m, msg.URL, messageDelBookmark, true)
 		}
 		return tab.showInput("Name", msg.Title, msg.URL, inputBookmark)
 	case GeminiResponse:
 		return tab.handleResponse(msg)
+	case GopherResponse:
+		return tab.handleGopherResponse(msg)
 	}
 
 	switch tab.mode {
@@ -215,6 +218,10 @@ func (le LoadError) Tab() tabID {
 	return le.tab
 }
 
+type ServerResponse interface {
+	GetData() []byte
+}
+
 type GeminiResponse struct {
 	*gemini.Response
 	level int
@@ -225,12 +232,36 @@ func (gr GeminiResponse) Tab() tabID {
 	return gr.tab
 }
 
-func (gi *GeminiResponse) DownloadTo(path string) error {
-	err := os.WriteFile(path, gi.Body, 0644)
+func (gr GeminiResponse) GetData() []byte {
+	return gr.Body
+}
+
+func DownloadTo(resp ServerResponse, path string) error {
+	err := os.WriteFile(path, resp.GetData(), 0644)
 	if err != nil {
 		return fmt.Errorf("could not complete download: %w", err)
 	}
 	return nil
+}
+
+type GopherResponse struct {
+	*gopher.Response
+	tab tabID
+}
+
+func (gr GopherResponse) GetData() []byte {
+	return gr.Data
+}
+
+func (gr GopherResponse) Tab() tabID {
+	return gr.tab
+}
+
+func (tab Tab) handleGopherResponse(resp GopherResponse) (Tab, tea.Cmd) {
+	tab.viewport.loading = false
+	tab.viewport = tab.viewport.SetGoperContent(resp.Data, resp.URL, resp.Type)
+	tab.lastResponse = resp
+	return tab, nil
 }
 
 func (tab Tab) handleResponse(resp GeminiResponse) (Tab, tea.Cmd) {
@@ -264,7 +295,7 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 	if !strings.Contains(url, "://") {
 		url = fmt.Sprintf("gemini://%s", url)
 	}
-	if url != "home://" && !strings.HasPrefix(url, "gemini://") {
+	if url != "home://" && !strings.HasPrefix(url, "gemini://") && !strings.HasPrefix(url, "gopher://") {
 		tab.viewport.loading = false
 		return tab.showMessage(fmt.Sprintf("Open %q externally?", url), url, messageLoadExternal, true)
 	}
@@ -290,17 +321,29 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 		if err != nil {
 			return err
 		}
-		resp, err := tab.client.LoadURL(ctx, *u, true)
-		if err := ctx.Err(); err != nil {
-			return LoadError{err: err, message: "Could not load URL", tab: tab.id}
+		switch u.Scheme {
+		case "gopher":
+			resp, err := gopher.LoadURL(ctx, *u)
+			if err != nil {
+				return LoadError{err: err, message: "Could not load URL", tab: tab.id}
+			}
+			if addHist {
+				tab.history.Add(u.String())
+			}
+			return GopherResponse{Response: resp, tab: tab.id}
+		default: // gemini
+			resp, err := tab.client.LoadURL(ctx, *u, false)
+			if err := ctx.Err(); err != nil {
+				return LoadError{err: err, message: "Could not load URL", tab: tab.id}
+			}
+			if err != nil {
+				return LoadError{err: err, message: "Could not load URL", tab: tab.id}
+			}
+			if addHist {
+				tab.history.Add(u.String())
+			}
+			return GeminiResponse{Response: resp, level: level, tab: tab.id}
 		}
-		if err != nil {
-			return LoadError{err: err, message: "Could not load URL", tab: tab.id}
-		}
-		if addHist {
-			tab.history.Add(u.String())
-		}
-		return GeminiResponse{Response: resp, level: level, tab: tab.id}
 	}
 	return tab, tea.Batch(cmd, spinner.Tick)
 }

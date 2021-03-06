@@ -1,4 +1,4 @@
-package gemtext
+package text
 
 import (
 	"bytes"
@@ -13,7 +13,10 @@ func LineWrap(line string, maxlen int) string {
 	var buf, word bytes.Buffer
 	var lineLen, wordLen int
 	for _, r := range line {
-		if wordLen >= maxlen {
+		if r == '\r' {
+			continue
+		}
+		if wordLen >= maxlen || r == '\n' {
 			if buf.Len() > 0 {
 				buf.WriteRune('\n')
 			}

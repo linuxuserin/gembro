@@ -6,39 +6,16 @@ import (
 	"strings"
 
 	"git.sr.ht/~rafael/gembro/gemini"
-	"github.com/muesli/termenv"
+	"git.sr.ht/~rafael/gembro/text"
 )
 
-type Colo string
-
-const (
-	Ch1   Colo = "#FF0000" // red
-	Ch2   Colo = "#FFFF00" // yellow
-	Ch3   Colo = "#FF00FF" // fuchsia
-	Clink Colo = "#6495ED" // cornflowerblue
-	Ccode Colo = "#EEE8AA" // palegoldenrod
-)
-
-const textWidth = 80
-
-var colors = termenv.ColorProfile()
-
-// Color returns the input with the given ANSI color applied
-// color can be a hex string e.g. #FF0000
-func Color(input string, color Colo) string {
-	return termenv.String(input).Foreground(colors.Color(string(color))).String()
-}
-
-type LinkPos struct {
-	Y         int
-	URL, Name string
-}
+const TextWidth = 80
 
 // ToANSI convert Gemtext to text suitable for terminal output with colors
 // It returns the converted text, a list of links with vertical positions, and the title of the page
 // the title defaults to given baseURL when not found in the page
 func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
-	content string, links []LinkPos, title string) {
+	content string, links text.Links, title string) {
 
 	var s strings.Builder
 	var mono bool
@@ -49,7 +26,7 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "# ") {
-			fmt.Fprintln(&s, Color(line[2:], Ch1))
+			fmt.Fprintln(&s, text.Color(line[2:], text.Ch1))
 			ypos++
 			if title == "" {
 				title = line[2:]
@@ -57,12 +34,12 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "## ") {
-			fmt.Fprintln(&s, Color(line[3:], Ch2))
+			fmt.Fprintln(&s, text.Color(line[3:], text.Ch2))
 			ypos++
 			continue
 		}
 		if !mono && strings.HasPrefix(line, "### ") {
-			fmt.Fprintln(&s, Color(line[4:], Ch3))
+			fmt.Fprintln(&s, text.Color(line[4:], text.Ch3))
 			ypos++
 			continue
 		}
@@ -77,18 +54,18 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 			if furl.Scheme != "gemini" {
 				extra = fmt.Sprintf(" (%s)", furl.Scheme)
 			}
-			fmt.Fprintf(&s, "> %s%s\n", Color(l.Name, Clink), extra)
-			links = append(links, LinkPos{Y: ypos, URL: furl.String(), Name: l.Name})
+			fmt.Fprintf(&s, "> %s%s\n", text.Color(l.Name, text.Clink), extra)
+			links.Add(ypos, furl.String(), l.Name)
 			ypos++
 			continue
 		}
 		if mono {
-			fmt.Fprintln(&s, Color(line, Ccode))
+			fmt.Fprintln(&s, text.Color(line, text.Ccode))
 			ypos++
 			continue
 		}
 
-		sl := LineWrap(line, textWidth)
+		sl := text.LineWrap(line, TextWidth)
 		for _, line := range strings.Split(sl, "\n") {
 			fmt.Fprintln(&s, line)
 			ypos++
@@ -101,7 +78,7 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 }
 
 func ApplyMargin(input string, availableWidth int) string {
-	margin := (availableWidth - textWidth) / 2
+	margin := (availableWidth - TextWidth) / 2
 	indent := strings.Repeat(" ", margin)
 	lines := strings.Split(input, "\n")
 	for i, line := range lines {

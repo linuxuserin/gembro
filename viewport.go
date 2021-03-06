@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"git.sr.ht/~rafael/gembro/gemini/gemtext"
+	"git.sr.ht/~rafael/gembro/gopher"
 	"git.sr.ht/~rafael/gembro/internal/history"
+	"git.sr.ht/~rafael/gembro/text"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,7 +35,7 @@ type Viewport struct {
 	URL, MediaType string
 
 	title     string
-	links     []gemtext.LinkPos
+	links     text.Links
 	lastEvent tea.MouseEventType
 	history   *history.History
 }
@@ -50,6 +52,25 @@ func NewViewport(startURL string, h *history.History) Viewport {
 	}
 }
 
+func (v Viewport) SetGoperContent(data []byte, url string, typ byte) Viewport {
+	v.URL = url
+	switch typ {
+	case 'h':
+		v.MediaType = "text/html"
+	case 'I':
+		v.MediaType = "image/jpeg"
+	default:
+		v.MediaType = "text/plain"
+	}
+	v.title = "Gopher"
+	var content string
+	content, v.links = gopher.ToANSI(data, typ)
+	content = gemtext.ApplyMargin(content, v.viewport.Width)
+	v.viewport.SetContent(content)
+	v.viewport.GotoTop()
+	return v
+}
+
 func (v Viewport) SetContent(content, url, mediaType string) Viewport {
 	v.URL = url
 	v.MediaType = mediaType
@@ -62,7 +83,7 @@ func (v Viewport) SetContent(content, url, mediaType string) Viewport {
 	default:
 		if strings.HasPrefix(mediaType, "text/") {
 			s = gemtext.ApplyMargin(content, v.viewport.Width)
-			v.links = nil
+			v.links = text.Links{}
 			v.title = url
 		} else {
 			s = fmt.Sprintf("Can't render content of this type: %s\n", mediaType)
@@ -172,27 +193,18 @@ func (v Viewport) View() string {
 		headerTail = fmt.Sprintf(" :: %s", v.spinner.View())
 	}
 	header := fmt.Sprintf("%s%s ", v.URL, headerTail)
-	gapSize := v.viewport.Width - gemtext.RuneCount(header)
+	gapSize := v.viewport.Width - text.RuneCount(header)
 	header += strings.Repeat("─", gapSize)
 
 	footer := fmt.Sprintf(" %3.f%%", v.viewport.ScrollPercent()*100)
 	footerLead, fwidth := v.footer.View()
-	gapSize = v.viewport.Width - gemtext.RuneCount(footer) - fwidth
+	gapSize = v.viewport.Width - text.RuneCount(footer) - fwidth
 	if gapSize < 0 {
 		gapSize = 0
 	}
 	footer = footerLead + strings.Repeat("─", gapSize) + footer
 
 	return fmt.Sprintf("%s\n%s\n%s", header, v.viewport.View(), footer)
-}
-
-func (v Viewport) findLinkY(y int) *gemtext.LinkPos {
-	for _, l := range v.links {
-		if l.Y == y {
-			return &l
-		}
-	}
-	return nil
 }
 
 func (viewport Viewport) handleMouse(msg tea.MouseMsg) (Viewport, tea.Cmd) {
@@ -221,7 +233,7 @@ func (viewport Viewport) handleMouse(msg tea.MouseMsg) (Viewport, tea.Cmd) {
 				return viewport, fireEvent(FooterClickEvent{msg})
 			}
 			ypos := viewport.viewport.YOffset + msg.Y - headerHeight
-			if link := viewport.findLinkY(ypos); link != nil {
+			if link := viewport.links.LinkAt(ypos); link != nil {
 				if viewport.lastEvent == tea.MouseMiddle {
 					cmd = fireEvent(OpenNewTabEvent{URL: link.URL})
 					cmds = append(cmds, cmd)

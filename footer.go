@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git.sr.ht/~rafael/gembro/gemini/gemtext"
+	"git.sr.ht/~rafael/gembro/text"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -41,7 +41,7 @@ func (f Footer) View() (string, int) {
 	var buf strings.Builder
 	var width int
 	for _, b := range f.buttons {
-		fmt.Fprintf(&buf, "[%s] ", gemtext.Color(b, gemtext.Clink))
+		fmt.Fprintf(&buf, "[%s] ", text.Color(b, text.Clink))
 		width += len(b) + 3
 	}
 	return buf.String(), width
