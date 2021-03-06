@@ -1,6 +1,6 @@
 # Gembro
 
-A mouse-driven CLI Gemini client
+A mouse-driven CLI Gemini client with Gopher support
 
 Made with the [Bubble Tea](https://github.com/charmbracelet/bubbletea) framework
 
