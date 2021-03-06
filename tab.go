@@ -30,6 +30,7 @@ const (
 	messagePlain = iota + 1
 	messageDelBookmark
 	messageLoadExternal
+	messageForceCert
 )
 
 type tabID uint64
@@ -78,6 +79,11 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		if errors.As(msg, &le) {
 			log.Print(le.Unwrap())
 			tab.viewport.loading = false
+			if errors.Is(msg, gemini.CertChanged) {
+				return tab.showMessage(fmt.Sprintf("The SSL certificate for %q has changed since last time.\n"+
+					"Would you like to see the page anyway?", le.URL),
+					le.URL, messageForceCert, true)
+			}
 		}
 		if errors.Is(msg, context.Canceled) {
 			return tab, nil
@@ -98,6 +104,10 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 					log.Print(err)
 				}
 			}
+		case messageForceCert:
+			if msg.Response {
+				return tab.loadURL(msg.Payload, true, 1, true)
+			}
 		}
 	case ShowMessageEvent:
 		return tab.showMessage(msg.Message, msg.Payload, msg.Type, msg.WithConfirm)
@@ -108,9 +118,9 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		switch msg.Type {
 		case inputQuery:
 			url := fmt.Sprintf("%s?%s", msg.Payload, neturl.QueryEscape(msg.Value))
-			return tab.loadURL(url, true, 1)
+			return tab.loadURL(url, true, 1, false)
 		case inputNav:
-			return tab.loadURL(msg.Value, true, 1)
+			return tab.loadURL(msg.Value, true, 1, false)
 		case inputBookmark:
 			if err := tab.bookmarks.Add(msg.Payload, msg.Value); err != nil {
 				log.Print(err)
@@ -123,14 +133,14 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	case ShowInputEvent:
 		return tab.showInput(msg.Message, msg.Value, msg.Payload, msg.Type)
 	case LoadURLEvent:
-		return tab.loadURL(msg.URL, msg.AddHistory, 1)
+		return tab.loadURL(msg.URL, msg.AddHistory, 1, false)
 	case GoBackEvent:
 		if url, ok := tab.history.Back(); ok {
-			return tab.loadURL(url, false, 1)
+			return tab.loadURL(url, false, 1, false)
 		}
 	case GoForwardEvent:
 		if url, ok := tab.history.Forward(); ok {
-			return tab.loadURL(url, false, 1)
+			return tab.loadURL(url, false, 1, false)
 		}
 	case ToggleBookmarkEvent:
 		if tab.bookmarks.Contains(msg.URL) {
@@ -199,6 +209,7 @@ type LoadError struct {
 	err     error
 	message string
 	tab     tabID
+	URL     string
 }
 
 func (le LoadError) Unwrap() error {
@@ -271,7 +282,7 @@ func (tab Tab) handleResponse(resp ServerResponse) (Tab, tea.Cmd) {
 			if resp.level > 5 {
 				return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", "", messagePlain, false)
 			}
-			return tab.loadURL(resp.Header.Meta, false, resp.level+1)
+			return tab.loadURL(resp.Header.Meta, false, resp.level+1, false)
 		case 4, 5, 6:
 			return tab.showMessage(fmt.Sprintf("Error: %s", resp.Header.Meta), "", messagePlain, false)
 		case 2:
@@ -291,7 +302,7 @@ func (tab Tab) handleResponse(resp ServerResponse) (Tab, tea.Cmd) {
 	return tab, nil
 }
 
-func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
+func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Tab, tea.Cmd) {
 	if !strings.Contains(url, "://") {
 		url = fmt.Sprintf("gemini://%s", url)
 	}
@@ -325,19 +336,19 @@ func (tab Tab) loadURL(url string, addHist bool, level int) (Tab, tea.Cmd) {
 		case "gopher":
 			resp, err := gopher.LoadURL(ctx, *u)
 			if err != nil {
-				return LoadError{err: err, message: "Could not load URL", tab: tab.id}
+				return LoadError{err: err, message: "Could not load URL", tab: tab.id, URL: u.String()}
 			}
 			if addHist {
 				tab.history.Add(u.String())
 			}
 			return GopherResponse{Response: resp, tab: tab.id}
 		default: // gemini
-			resp, err := tab.client.LoadURL(ctx, *u, false)
+			resp, err := tab.client.LoadURL(ctx, *u, skipVerify)
 			if err := ctx.Err(); err != nil {
-				return LoadError{err: err, message: "Could not load URL", tab: tab.id}
+				return LoadError{err: err, message: "Could not load URL", tab: tab.id, URL: u.String()}
 			}
 			if err != nil {
-				return LoadError{err: err, message: "Could not load URL", tab: tab.id}
+				return LoadError{err: err, message: "Could not load URL", tab: tab.id, URL: u.String()}
 			}
 			if addHist {
 				tab.history.Add(u.String())
