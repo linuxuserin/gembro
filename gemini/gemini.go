@@ -50,15 +50,16 @@ type Response struct {
 }
 
 type Client struct {
-	certStore *CertStore
+	certStore  *CertStore
+	clientCert *tls.Certificate
 }
 
-func NewClient(certsPath string) (*Client, error) {
+func NewClient(certsPath string, clientCert *tls.Certificate) (*Client, error) {
 	cs, err := Load(certsPath)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{certStore: cs}, nil
+	return &Client{certStore: cs, clientCert: clientCert}, nil
 }
 
 func (r *Response) GetBody() (string, error) {
@@ -81,12 +82,17 @@ func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool
 	if port == "" {
 		port = "1965"
 	}
+	var certs []tls.Certificate
+	if client.clientCert != nil {
+		certs = append(certs, *client.clientCert)
+	}
 	d := tls.Dialer{
 		Config: &tls.Config{
 			InsecureSkipVerify: true,
 			VerifyConnection: func(state tls.ConnectionState) error {
 				return client.certStore.Check(surl.Hostname(), state.PeerCertificates[0], skipVerify)
 			},
+			Certificates: certs,
 		},
 	}
 	conn, err := d.DialContext(ctx, "tcp", fmt.Sprintf("%s:%s", surl.Hostname(), port))

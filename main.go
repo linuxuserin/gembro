@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
+	"math/rand"
 	neturl "net/url"
 	"os"
 	"os/signal"
@@ -31,6 +36,11 @@ const (
 	headerHeight = 2
 )
 
+const (
+	certName = "cert.crt"
+	keyName  = "cert.key"
+)
+
 var builtinBookmarks = []bookmark.Bookmark{
 	{URL: "gemini://gemini.circumlunar.space/", Name: "Project Gemini"},
 	{URL: "gemini://gus.guru/", Name: "Gemini Universal Search"},
@@ -42,6 +52,8 @@ func main() {
 	debug := flag.String("debug-url", "", "Debug an URL")
 	logFile := flag.String("log-file", "", "File to output log to")
 	url := flag.String("url", "", "Load this URL")
+
+	gen := flag.String("generate-certificate", "", "Generate a client certificate with given name")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -80,9 +92,48 @@ func main() {
 		log.Printf("cache dir: %s", *cacheDir)
 	}
 
-	if err := run(*cacheDir, *url); err != nil {
-		log.Fatal(err)
+	if *gen != "" {
+		certFile := filepath.Join(*cacheDir, certName)
+		keyFile := filepath.Join(*cacheDir, keyName)
+		if err := generateCertificate(*gen, certFile, keyFile); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		fmt.Printf("Key file at: %q\nCert file at: %q\nGembro will automatically load this certificate.\n",
+			keyFile, certFile)
+		return
 	}
+
+	if err := run(*cacheDir, *url); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func generateCertificate(name, certFile, keyFile string) error {
+	if _, err := os.Stat(certFile); !os.IsNotExist(err) {
+		return fmt.Errorf("certificate file already exists at %q", certFile)
+	}
+	if _, err := os.Stat(keyFile); !os.IsNotExist(err) {
+		return fmt.Errorf("key file already exists at %q", keyFile)
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	err := gemini.GenerateClientCertificate(certFile, keyFile, x509.Certificate{
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().AddDate(5, 0, 0),
+		// you have to generate a different serial number each execution
+		SerialNumber: big.NewInt(rand.Int63()),
+		Subject: pkix.Name{
+			CommonName:   name,
+			Organization: []string{name},
+		},
+		BasicConstraintsValid: true,
+	})
+	if err != nil {
+		return fmt.Errorf("could not generate certificate: %w", err)
+	}
+	return nil
 }
 
 func debugURL(cacheDir, url string) error {
@@ -93,7 +144,7 @@ func debugURL(cacheDir, url string) error {
 	if u.Scheme != "gemini" {
 		return fmt.Errorf("non-gemini scheme")
 	}
-	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName))
+	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName), nil)
 	if err != nil {
 		return err
 	}
@@ -110,7 +161,18 @@ func debugURL(cacheDir, url string) error {
 }
 
 func run(cacheDir, url string) error {
-	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName))
+	certFile := filepath.Join(cacheDir, certName)
+	keyFile := filepath.Join(cacheDir, keyName)
+	ccert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	var cert *tls.Certificate
+	if err != nil {
+		log.Printf("did not load client certificate: %s", err)
+		log.Printf("generate certificate with -generate-certificate if client certificate is needed")
+	} else {
+		cert = &ccert
+	}
+
+	client, err := gemini.NewClient(filepath.Join(cacheDir, certsName), cert)
 	if err != nil {
 		return err
 	}
