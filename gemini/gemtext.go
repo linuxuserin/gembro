@@ -64,11 +64,9 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 			continue
 		}
 
-		sl := text.LineWrap(line, TextWidth)
-		for _, line := range strings.Split(sl, "\n") {
-			fmt.Fprintln(&s, line)
-			ypos++
-		}
+		w := text.TextWrap(line, TextWidth)
+		fmt.Fprint(&s, w)
+		ypos += strings.Count(w, "\n")
 	}
 	if title == "" {
 		title = baseURL.String()
