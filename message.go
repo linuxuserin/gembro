@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"git.sr.ht/~rafael/gembro/text"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -26,8 +27,9 @@ func (m Message) Update(msg tea.Msg) (Message, tea.Cmd) {
 }
 
 func (m Message) View() string {
+	msg := text.TextWrap(m.Message, 80)
 	if m.WithConfirm {
-		return fmt.Sprintf("%s\n\n(Y)es or (N)o", m.Message)
+		return fmt.Sprintf("%s\n\n(Y)es or (N)o", msg)
 	}
-	return fmt.Sprintf("%s\n\nPress ENTER or q to continue", m.Message)
+	return fmt.Sprintf("%s\n\nPress ENTER or q to continue", msg)
 }
