@@ -8,10 +8,10 @@ import (
 
 const softHyphen = '\u00AD'
 
-// TextWrap wraps text so that each line is no longer than maxlen by inserting newlines.
+// Wrap wraps text so that each line is no longer than maxlen by inserting newlines.
 // Spaces and '-' will be used as natural breaking points, but if individual words are longer
 // than maxlen a newline will be inserted to break them up.
-func TextWrap(text string, maxlen int) string {
+func Wrap(text string, maxlen int) string {
 	var buf bytes.Buffer
 	for _, line := range strings.Split(text, "\n") {
 		fmt.Fprintln(&buf, lineWrap(line, maxlen))

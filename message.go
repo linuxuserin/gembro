@@ -27,7 +27,7 @@ func (m Message) Update(msg tea.Msg) (Message, tea.Cmd) {
 }
 
 func (m Message) View() string {
-	msg := text.TextWrap(m.Message, 80)
+	msg := text.Wrap(m.Message, 80)
 	if m.WithConfirm {
 		return fmt.Sprintf("%s\n\n(Y)es or (N)o", msg)
 	}

@@ -24,7 +24,7 @@ func ToANSI(data []byte, typ byte) (s string, links text.Links) {
 	var buf strings.Builder
 	switch typ {
 	case '0', 'h':
-		return text.TextWrap(string(data), TextWidth), links
+		return text.Wrap(string(data), TextWidth), links
 	}
 	var ypos int
 	for _, line := range strings.Split(string(data), "\n") {

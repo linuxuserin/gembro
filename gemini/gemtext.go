@@ -64,7 +64,7 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 			continue
 		}
 
-		w := text.TextWrap(line, TextWidth)
+		w := text.Wrap(line, TextWidth)
 		fmt.Fprint(&s, w)
 		ypos += strings.Count(w, "\n")
 	}
