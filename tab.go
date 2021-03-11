@@ -336,7 +336,7 @@ func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Ta
 		case "gopher":
 			resp, err := gopher.LoadURL(ctx, *u)
 			if err != nil {
-				return LoadError{err: err, message: "Could not load URL", tab: tab.id, URL: u.String()}
+				return LoadError{err: err, message: "could not load URL", tab: tab.id, URL: u.String()}
 			}
 			if addHist {
 				tab.history.Add(u.String())
@@ -345,10 +345,10 @@ func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Ta
 		default: // gemini
 			resp, err := tab.client.LoadURL(ctx, *u, skipVerify)
 			if err := ctx.Err(); err != nil {
-				return LoadError{err: err, message: "Could not load URL", tab: tab.id, URL: u.String()}
+				return LoadError{err: err, message: "could not load URL", tab: tab.id, URL: u.String()}
 			}
 			if err != nil {
-				return LoadError{err: err, message: "Could not load URL", tab: tab.id, URL: u.String()}
+				return LoadError{err: err, message: "could not load URL", tab: tab.id, URL: u.String()}
 			}
 			if addHist && resp.Header.Status == 2 {
 				tab.history.Add(u.String())
