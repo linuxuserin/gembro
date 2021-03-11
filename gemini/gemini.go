@@ -90,6 +90,10 @@ func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool
 		Config: &tls.Config{
 			InsecureSkipVerify: true,
 			VerifyConnection: func(state tls.ConnectionState) error {
+				err := state.PeerCertificates[0].VerifyHostname(surl.Hostname())
+				if err != nil {
+					return err
+				}
 				return client.certStore.Check(surl.Hostname(), state.PeerCertificates[0], skipVerify)
 			},
 			Certificates: certs,
