@@ -350,7 +350,7 @@ func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Ta
 			if err != nil {
 				return LoadError{err: err, message: "Could not load URL", tab: tab.id, URL: u.String()}
 			}
-			if addHist {
+			if addHist && resp.Header.Status == 2 {
 				tab.history.Add(u.String())
 			}
 			return GeminiResponse{Response: resp, level: level, tab: tab.id}
