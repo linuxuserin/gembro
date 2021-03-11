@@ -90,7 +90,13 @@ func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool
 		Config: &tls.Config{
 			InsecureSkipVerify: true,
 			VerifyConnection: func(state tls.ConnectionState) error {
-				err := state.PeerCertificates[0].VerifyHostname(surl.Hostname())
+				cert := state.PeerCertificates[0]
+				// CommonName error workaround
+				if strings.Contains(cert.Subject.CommonName, ".") {
+					cert.DNSNames = append(cert.DNSNames, cert.Subject.CommonName)
+					cert.Subject.CommonName = ""
+				}
+				err := cert.VerifyHostname(surl.Hostname())
 				if err != nil {
 					return err
 				}
