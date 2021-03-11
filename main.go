@@ -51,10 +51,13 @@ func main() {
 	cacheDir := flag.String("cache-dir", "", "Directory to store cache files (like cert info and bookmarks)")
 	debug := flag.String("debug-url", "", "Debug an URL")
 	logFile := flag.String("log-file", "", "File to output log to")
-	url := flag.String("url", "", "Load this URL")
-
 	gen := flag.String("generate-certificate", "", "Generate a client certificate with given name")
 	flag.Parse()
+
+	var url string
+	if len(flag.Args()) > 0 {
+		url = flag.Arg(0)
+	}
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -104,7 +107,7 @@ func main() {
 		return
 	}
 
-	if err := run(*cacheDir, *url); err != nil {
+	if err := run(*cacheDir, url); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
