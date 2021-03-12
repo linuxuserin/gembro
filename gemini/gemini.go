@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log"
@@ -90,13 +91,8 @@ func (client *Client) LoadURL(ctx context.Context, surl url.URL, skipVerify bool
 		Config: &tls.Config{
 			InsecureSkipVerify: true,
 			VerifyConnection: func(state tls.ConnectionState) error {
-				cert := state.PeerCertificates[0]
-				// CommonName error workaround
-				if strings.Contains(cert.Subject.CommonName, ".") {
-					cert.DNSNames = append(cert.DNSNames, cert.Subject.CommonName)
-					cert.Subject.CommonName = ""
-				}
-				err := cert.VerifyHostname(surl.Hostname())
+				fixCert(state.PeerCertificates[0])
+				err := state.PeerCertificates[0].VerifyHostname(surl.Hostname())
 				if err != nil {
 					return err
 				}
@@ -176,4 +172,16 @@ func ParseLink(line string) (*Link, error) {
 		URL:  chars[:idx],
 		Name: strings.TrimSpace(chars[idx:]),
 	}, nil
+}
+
+func fixCert(cert *x509.Certificate) {
+	if !strings.Contains(cert.Subject.CommonName, ".") {
+		return
+	}
+	for _, item := range cert.DNSNames {
+		if item == cert.Subject.CommonName {
+			return
+		}
+	}
+	cert.DNSNames = append(cert.DNSNames, cert.Subject.CommonName)
 }
