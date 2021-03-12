@@ -282,7 +282,7 @@ func (tab Tab) handleResponse(resp ServerResponse) (Tab, tea.Cmd) {
 			if resp.level > 5 {
 				return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", "", messagePlain, false)
 			}
-			return tab.loadURL(resp.Header.Meta, false, resp.level+1, false)
+			return tab.loadURL(resp.Header.Meta, true, resp.level+1, false)
 		case 4, 5, 6:
 			return tab.showMessage(fmt.Sprintf("Error: %s", resp.Header.Meta), "", messagePlain, false)
 		case 2:
