@@ -46,8 +46,9 @@ func ToANSI(data []byte, typ byte) (s string, links text.Links) {
 			} else {
 				url = fmt.Sprintf("gopher://%s:%s/%c%s", f[2], f[3], line[0], f[1])
 			}
-			links.Add(ypos, url, f[0])
-			fmt.Fprintf(&buf, "%s", text.Color(f[0], text.Clink))
+			count := links.Count() + 1
+			links.Add(ypos, count, url, f[0])
+			fmt.Fprintf(&buf, "%d> %s", count, text.Color(f[0], text.Clink))
 			switch {
 			case external:
 				fmt.Fprintf(&buf, " (%s)\n", strings.Split(url, "://")[0])

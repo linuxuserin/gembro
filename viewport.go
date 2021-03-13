@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	neturl "net/url"
+	"strconv"
 	"strings"
 
 	"git.sr.ht/~rafael/gembro/gemini"
@@ -38,6 +39,7 @@ type Viewport struct {
 	links     text.Links
 	lastEvent tea.MouseEventType
 	history   *history.History
+	digits    string
 }
 
 func NewViewport(startURL string, h *history.History) Viewport {
@@ -122,21 +124,44 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 		v, cmd = v.handleMouse(msg)
 		cmds = append(cmds, cmd)
 	case tea.KeyMsg:
-		switch msg.String() {
+		switch key := msg.String(); key {
 		case "q":
 			return v, v.handleButtonClick(buttonCloseTab)
 		case "g":
 			return v, v.handleButtonClick(buttonGoto)
 		case "d":
 			return v, v.handleButtonClick(buttonDownload)
-		case "h":
+		case "H":
 			return v, v.handleButtonClick(buttonHome)
 		case "b":
 			return v, v.handleButtonClick(buttonBookmark)
-		case "left":
+		case "left", "h":
 			return v, v.handleButtonClick(buttonBack)
-		case "right":
+		case "right", "l":
 			return v, v.handleButtonClick(buttonFwd)
+		case "esc":
+			v.digits = ""
+			return v, nil
+		case "backspace":
+			if len(v.digits) > 0 {
+				v.digits = v.digits[0 : len(v.digits)-1]
+				return v, nil
+			}
+		case "enter", "t":
+			num, _ := strconv.Atoi(v.digits)
+			link := v.links.Number(num)
+			if link != nil {
+				v.digits = ""
+				if key == "t" {
+					return v, fireEvent(OpenNewTabEvent{URL: link.URL, Switch: true})
+				}
+				return v, fireEvent(LoadURLEvent{URL: link.URL, AddHistory: true})
+			}
+		default:
+			if "0" <= key && key <= "9" {
+				v.digits += key
+				return v, nil
+			}
 		}
 	case ButtonClickEvent:
 		return v, v.handleButtonClick(msg.Button)
@@ -191,6 +216,9 @@ func (v Viewport) View() string {
 	var headerTail string
 	if v.loading {
 		headerTail = fmt.Sprintf(" :: %s", v.spinner.View())
+	}
+	if v.digits != "" {
+		headerTail = fmt.Sprintf("%s :: %s", headerTail, v.digits)
 	}
 	header := fmt.Sprintf("%s%s ", v.URL, headerTail)
 	gapSize := v.viewport.Width - text.RuneCount(header)

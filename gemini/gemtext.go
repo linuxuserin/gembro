@@ -53,8 +53,9 @@ func ToANSI(data string, availableWidth int, baseURL neturl.URL) (
 			if furl.Scheme != "gemini" {
 				extra = fmt.Sprintf(" (%s)", furl.Scheme)
 			}
-			fmt.Fprintf(&s, "> %s%s\n", text.Color(l.Name, text.Clink), extra)
-			links.Add(ypos, furl.String(), l.Name)
+			count := links.Count() + 1
+			links.Add(ypos, count, furl.String(), l.Name)
+			fmt.Fprintf(&s, "%d> %s %s\n", count, text.Color(l.Name, text.Clink), extra)
 			ypos++
 			continue
 		}
