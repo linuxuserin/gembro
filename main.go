@@ -255,6 +255,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch keys {
 		case "ctrl+c":
 			return m, fireEvent(QuitEvent{})
+		case "tab":
+			num := (m.currentTab + 1) % len(m.tabs)
+			return m.selectTab(num)
+		case "shift+tab":
+			num := (m.currentTab + len(m.tabs) - 1) % len(m.tabs)
+			return m.selectTab(num)
 		}
 		if msg.Alt && len(msg.Runes) == 1 && '1' <= msg.Runes[0] && msg.Runes[0] <= '9' {
 			num := int(msg.Runes[0] - '0')
