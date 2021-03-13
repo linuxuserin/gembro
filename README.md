@@ -16,37 +16,33 @@ Made with the [Bubble Tea](https://github.com/charmbracelet/bubbletea) framework
 
 Some keys might not work in some terminals.
 
-|Action|Key|
-|--|--|
-|Go back|h|
-|Go forward|l|
-|Open link|type number + enter|
-|Open link in tab|type number + t|
-|Quit|ctrl+c|
-|Next tab|tab|
-|Previous tab|shift+tab|
-|Goto tab|alt+#|
-|Close tab|q|
-|Goto URL|g|
-|Download page|d|
-|Home|H|
-|Bookmark|b|
-|Scroll up|k|
-|Scroll download|j|
-|Scroll up (page)|Page up|
-|Scroll download (page)|Page down|
+Go back: h  
+Go forward: l  
+Open link: type number + enter  
+Open link in tab: type number + t  
+Quit: ctrl+c  
+Next tab: tab  
+Previous tab: shift+tab  
+Goto tab: alt+#  
+Close tab: q  
+Goto URL: g  
+Download page: d  
+Home: H  
+Bookmark: b  
+Scroll up: k  
+Scroll download: j  
+Scroll up (page): Page up  
+Scroll download (page): Page down
 
 ## Mouse
 
 Some buttons might not work in some terminals.
 
-|Action|Button|
-|--|--|
-|Open link|Left click|
-|Open link in tab|Middle click|
-|Close tab|Middle click (on tab)|
-|Go back|Right click|
-|Scroll|Mouse wheel|
+Open link: Left click  
+Open link in tab: Middle click  
+Close tab: Middle click (on tab)  
+Go back: Right click  
+Scroll: Mouse wheel
 
 ## What's Gemini?
 
