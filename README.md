@@ -31,6 +31,10 @@ Some keys might not work in some terminals.
 |Download page|d|
 |Home|H|
 |Bookmark|b|
+|Scroll up|k|
+|Scroll download|j|
+|Scroll up (page)|Page up|
+|Scroll download (page)|Page down|
 
 ## Mouse
 
@@ -42,6 +46,7 @@ Some buttons might not work in some terminals.
 |Open link in tab|Middle click|
 |Close tab|Middle click (on tab)|
 |Go back|Right click|
+|Scroll|Mouse wheel|
 
 ## What's Gemini?
 
@@ -55,9 +60,3 @@ See [Project Gemini](https://gemini.circumlunar.space/)
 go build
 ./gembro
 ```
-
-## Todo
-
-- Help screen
-- Turn button bar in clickable buttons
-- Fix download name and extension (consider media type)
