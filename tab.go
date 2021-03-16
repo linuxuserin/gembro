@@ -179,8 +179,7 @@ func (tab Tab) View() string {
 }
 
 func (tab Tab) showMessage(msg, payload string, typ int, withConfirm bool) (Tab, tea.Cmd) {
-	tab.message = Message{Message: msg,
-		WithConfirm: withConfirm, Type: typ, Payload: payload}
+	tab.message = NewMessage(msg, typ, withConfirm, payload)
 	tab.mode = modeMessage
 	return tab, nil
 }

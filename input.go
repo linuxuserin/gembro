@@ -45,7 +45,7 @@ func (inp Input) Update(msg tea.Msg) (Input, tea.Cmd) {
 		case "enter":
 			inp.input.Blur()
 			cmds = append(cmds, fireEvent(InputEvent{Value: inp.input.Value(), Type: inp.Type, Payload: inp.Payload}))
-		case "ctrl+q":
+		case "esc":
 			inp.input.Blur()
 			cmds = append(cmds, fireEvent(CloseInputEvent{}))
 		}
@@ -57,5 +57,5 @@ func (inp Input) Update(msg tea.Msg) (Input, tea.Cmd) {
 }
 
 func (inp Input) View() string {
-	return fmt.Sprintf("%s %s\n\nPress ENTER to continue or ctrl+q to cancel", inp.Message, inp.input.View())
+	return fmt.Sprintf("%s %s\n\nPress ENTER to continue or Escape to cancel", inp.Message, inp.input.View())
 }
