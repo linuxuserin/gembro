@@ -25,8 +25,10 @@ func readHeader(in *bufio.Reader) (*Header, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not read header: %w", err)
 	}
+	line = strings.TrimSuffix(line, "\r\n")
+
 	var h Header
-	if len(line) < 2 {
+	if len(line) < 3 {
 		return nil, fmt.Errorf("header too short")
 	}
 	if '1' > line[0] || line[0] > '6' {
@@ -37,7 +39,7 @@ func readHeader(in *bufio.Reader) (*Header, error) {
 		return nil, fmt.Errorf("malformed header")
 	}
 	h.StatusDetail = line[1] - '0'
-	h.Meta = strings.TrimSpace(line[2:])
+	h.Meta = line[3:]
 	if len(h.Meta) > 1024 {
 		return nil, fmt.Errorf("meta too long")
 	}
