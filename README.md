@@ -48,7 +48,7 @@ Scroll download: j
 
 Scroll up (page): Page up
 
-Scroll download (page): Page down
+Scroll down (page): Page down
 
 ## Mouse
 
