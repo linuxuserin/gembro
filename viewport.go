@@ -25,6 +25,7 @@ const (
 	buttonGoto     = "Goto"
 	buttonCloseTab = "Close Tab"
 	buttonQuit     = "Quit"
+	buttonHelp     = "Help"
 )
 
 type Viewport struct {
@@ -50,7 +51,7 @@ func NewViewport(startURL string, h *history.History) Viewport {
 		URL:     startURL,
 		spinner: s,
 		history: h,
-		footer:  NewFooter(buttonBack, buttonFwd, buttonHome, buttonBookmark, buttonDownload, buttonQuit),
+		footer:  NewFooter(buttonBack, buttonFwd, buttonHome, buttonBookmark, buttonDownload, buttonHelp, buttonQuit),
 	}
 }
 
@@ -104,7 +105,6 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		verticalMargins := headerHeight + footerHeight
-
 		if !v.ready {
 			v.viewport = viewport.Model{Width: msg.Width, Height: msg.Height - verticalMargins}
 			v.viewport.YPosition = headerHeight
@@ -113,7 +113,7 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 			v.ready = true
 			startURL := v.URL
 			if startURL == "" {
-				startURL = "home://"
+				startURL = homeURL
 			}
 			return v, fireEvent(LoadURLEvent{URL: startURL, AddHistory: v.history.Current() != startURL})
 		} else {
@@ -135,6 +135,8 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 			return v, v.handleButtonClick(buttonHome)
 		case "b":
 			return v, v.handleButtonClick(buttonBookmark)
+		case "?":
+			return v, v.handleButtonClick(buttonHelp)
 		case "left", "h":
 			return v, v.handleButtonClick(buttonBack)
 		case "right", "l":
@@ -186,7 +188,12 @@ func (v Viewport) handleButtonClick(btn string) tea.Cmd {
 	case buttonFwd:
 		return fireEvent(GoForwardEvent{})
 	case buttonHome:
-		return fireEvent(LoadURLEvent{URL: "home://", AddHistory: true})
+		return fireEvent(LoadURLEvent{URL: homeURL, AddHistory: true})
+	case buttonHelp:
+		if v.URL == helpURL {
+			return fireEvent(GoBackEvent{})
+		}
+		return fireEvent(LoadURLEvent{URL: helpURL, AddHistory: true})
 	case buttonBookmark:
 		return fireEvent(ToggleBookmarkEvent{URL: v.URL, Title: v.title})
 	case buttonDownload:
@@ -195,7 +202,7 @@ func (v Viewport) handleButtonClick(btn string) tea.Cmd {
 			Type:  inputDownloadSrc})
 	case buttonGoto:
 		var val string
-		if cur := v.history.Current(); cur != "home://" {
+		if cur := v.history.Current(); cur != homeURL && cur != helpURL {
 			val = cur
 		}
 		return fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav, Payload: "", Value: val})

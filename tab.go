@@ -35,6 +35,11 @@ const (
 
 type tabID uint64
 
+const (
+	homeURL = "home://"
+	helpURL = "help://"
+)
+
 type Tab struct {
 	id           tabID
 	mode         mode
@@ -46,6 +51,7 @@ type Tab struct {
 	history      *history.History
 	bookmarks    *bookmark.Store
 	lastResponse ServerResponse
+	specialPages map[string]func(Tab) string
 }
 
 func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store, h *history.History, id tabID) Tab {
@@ -65,6 +71,10 @@ func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store, h *histo
 		viewport:  NewViewport(startURL, h),
 		message:   Message{},
 		bookmarks: bs,
+		specialPages: map[string]func(Tab) string{
+			homeURL: homeContent,
+			helpURL: helpContent,
+		},
 	}
 }
 
@@ -190,7 +200,7 @@ func (tab Tab) showInput(msg, val, payload string, typ int) (Tab, tea.Cmd) {
 	return tab, textinput.Blink
 }
 
-func (tab Tab) homeContent() string {
+func homeContent(tab Tab) string {
 	var buf strings.Builder
 	fmt.Fprint(&buf, "# Home\n\n")
 	for _, bookmark := range builtinBookmarks {
@@ -202,6 +212,40 @@ func (tab Tab) homeContent() string {
 		fmt.Fprintf(&buf, "=> %s %s\n", bookmark.URL, bookmark.Name)
 	}
 	return buf.String()
+}
+
+func helpContent(tab Tab) string {
+	s := `
+# Keys
+
+Go back		h
+Go forward		l
+Open link		type number + enter
+Open link in tab	type number + t
+Quit			ctrl+c
+Next tab		tab
+Previous tab		shift+tab
+Goto tab		alt+#
+Close tab		q
+Goto URL		g
+Download page		d
+Home			H
+Bookmark		b
+Scroll up		k
+Scroll download	j
+Scroll up (page)	Page up
+Scroll down (page)	Page down
+
+
+# Mouse
+
+Open link		Left click
+Open link in tab	Middle click
+Close tab		Middle click (on tab)
+Go back		Right click
+Scroll		Mouse wheel
+`
+	return s
 }
 
 type LoadError struct {
@@ -305,7 +349,8 @@ func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Ta
 	if !strings.Contains(url, "://") {
 		url = fmt.Sprintf("gemini://%s", url)
 	}
-	if url != "home://" && !strings.HasPrefix(url, "gemini://") && !strings.HasPrefix(url, "gopher://") {
+	specialF, isSpecial := tab.specialPages[url]
+	if !isSpecial && !strings.HasPrefix(url, "gemini://") && !strings.HasPrefix(url, "gopher://") {
 		tab.viewport.loading = false
 		return tab.showMessage(fmt.Sprintf("Open %q externally?", url), url, messageLoadExternal, true)
 	}
@@ -319,11 +364,11 @@ func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Ta
 	cmd := func() tea.Msg {
 		defer cancel()
 
-		if url == "home://" {
+		if isSpecial {
 			if addHist {
 				tab.history.Add(url)
 			}
-			return GeminiResponse{Response: &gemini.Response{Body: []byte(tab.homeContent()),
+			return GeminiResponse{Response: &gemini.Response{Body: []byte(specialF(tab)),
 				URL: url, Header: gemini.Header{Status: 2, Meta: "text/gemini"}}, level: level, tab: tab.id}
 		}
 
