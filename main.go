@@ -332,6 +332,7 @@ type LoadURLEvent struct {
 
 type GoBackEvent struct{}
 type GoForwardEvent struct{}
+type EditSourceEvent struct{}
 
 type ToggleBookmarkEvent struct {
 	URL, Title string

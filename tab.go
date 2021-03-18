@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	neturl "net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -158,6 +161,11 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			return tab.showMessage(m, msg.URL, messageDelBookmark, true)
 		}
 		return tab.showInput("Name", msg.Title, msg.URL, inputBookmark)
+	case EditSourceEvent:
+		if err := editSource(tab.lastResponse.GetData()); err != nil {
+			log.Print(err)
+		}
+		return tab, nil
 	case ServerResponse:
 		return tab.handleResponse(msg)
 	}
@@ -218,32 +226,33 @@ func helpContent(tab Tab) string {
 	s := `
 # Keys
 
-Go back		h
-Go forward		l
-Open link		type number + enter
-Open link in tab	type number + t
-Quit			ctrl+c
-Next tab		tab
-Previous tab		shift+tab
-Goto tab		alt+#
-Close tab		q
-Goto URL		g
-Download page		d
-Home			H
-Bookmark		b
-Scroll up		k
-Scroll download	j
-Scroll up (page)	Page up
-Scroll down (page)	Page down
+Go back                 h
+Go forward              l
+Open link               type number + enter
+Open link in tab        type number + t
+Quit                    ctrl+c
+Next tab                tab
+Previous tab            shift+tab
+Goto tab                alt+#
+Close tab               q
+Goto URL                g
+Download page           d
+Home                    H
+Bookmark                b
+View source (in gvim)   e
+Scroll up               k
+Scroll down             j
+Scroll up (page)        Page up
+Scroll down (page)      Page down
 
 
 # Mouse
 
-Open link		Left click
-Open link in tab	Middle click
-Close tab		Middle click (on tab)
-Go back		Right click
-Scroll		Mouse wheel
+Open link               Left click
+Open link in tab        Middle click
+Close tab               Middle click (on tab)
+Go back                 Right click
+Scroll                  Mouse wheel
 `
 	return s
 }
@@ -401,4 +410,22 @@ func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Ta
 		}
 	}
 	return tab, tea.Batch(cmd, spinner.Tick)
+}
+
+func editSource(data []byte) error {
+	cmd := exec.Command("gvim", "-")
+	stderr, _ := cmd.StderrPipe()
+	stdin, _ := cmd.StdinPipe()
+	go stdin.Write(data)
+	go func() {
+		var buf bytes.Buffer
+		io.Copy(&buf, stderr)
+		if buf.Len() > 0 {
+			log.Print(buf.String())
+		}
+	}()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("could not run edit cmd: %w", err)
+	}
+	return nil
 }

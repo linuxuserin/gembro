@@ -26,6 +26,7 @@ const (
 	buttonCloseTab = "Close Tab"
 	buttonQuit     = "Quit"
 	buttonHelp     = "Help"
+	buttonEdit     = "Edit"
 )
 
 type Viewport struct {
@@ -137,6 +138,8 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 			return v, v.handleButtonClick(buttonBookmark)
 		case "?":
 			return v, v.handleButtonClick(buttonHelp)
+		case "e":
+			return v, v.handleButtonClick(buttonEdit)
 		case "left", "h":
 			return v, v.handleButtonClick(buttonBack)
 		case "right", "l":
@@ -208,6 +211,8 @@ func (v Viewport) handleButtonClick(btn string) tea.Cmd {
 		return fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav, Payload: "", Value: val})
 	case buttonCloseTab:
 		return fireEvent(CloseCurrentTabEvent{})
+	case buttonEdit:
+		return fireEvent(EditSourceEvent{})
 	case buttonQuit:
 		return fireEvent(QuitEvent{})
 	default:
