@@ -36,6 +36,7 @@ type Viewport struct {
 	ready          bool
 	loading        bool
 	URL, MediaType string
+	startScroll    int
 
 	title     string
 	links     text.Links
@@ -44,15 +45,16 @@ type Viewport struct {
 	digits    string
 }
 
-func NewViewport(startURL string, h *history.History) Viewport {
+func NewViewport(startURL string, scrollPos int, h *history.History) Viewport {
 	s := spinner.NewModel()
 	s.Spinner = spinner.Points
 	// footerLead := "Back (RMB) Forward (->) Home (h) Bookmark (b) Download (d) Close tab (q) Quit (ctrl+c) "
 	return Viewport{
-		URL:     startURL,
-		spinner: s,
-		history: h,
-		footer:  NewFooter(buttonBack, buttonFwd, buttonHome, buttonBookmark, buttonDownload, buttonHelp, buttonQuit),
+		URL:         startURL,
+		startScroll: scrollPos,
+		spinner:     s,
+		history:     h,
+		footer:      NewFooter(buttonBack, buttonFwd, buttonHome, buttonBookmark, buttonDownload, buttonHelp, buttonQuit),
 	}
 }
 
@@ -75,7 +77,7 @@ func (v Viewport) SetGoperContent(data []byte, url string, typ byte) Viewport {
 	return v
 }
 
-func (v Viewport) SetGeminiContent(content, url, mediaType string) Viewport {
+func (v Viewport) SetGeminiContent(content, url, mediaType string, scrollPos int) Viewport {
 	v.URL = url
 	v.MediaType = mediaType
 	u, _ := neturl.Parse(url)
@@ -95,7 +97,7 @@ func (v Viewport) SetGeminiContent(content, url, mediaType string) Viewport {
 	}
 
 	v.viewport.SetContent(s)
-	v.viewport.GotoTop()
+	v.viewport.SetYOffset(scrollPos)
 	return v
 }
 
@@ -116,7 +118,9 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 			if startURL == "" {
 				startURL = homeURL
 			}
-			return v, fireEvent(LoadURLEvent{URL: startURL, AddHistory: v.history.Current() != startURL})
+			hist, _ := v.history.Current()
+			return v, fireEvent(LoadURLEvent{URL: startURL, ScrollPos: v.startScroll,
+				AddHistory: hist != startURL})
 		} else {
 			v.viewport.Width = msg.Width
 			v.viewport.Height = msg.Height - verticalMargins
@@ -205,7 +209,7 @@ func (v Viewport) handleButtonClick(btn string) tea.Cmd {
 			Type:  inputDownloadSrc})
 	case buttonGoto:
 		var val string
-		if cur := v.history.Current(); cur != homeURL && cur != helpURL {
+		if cur, _ := v.history.Current(); cur != homeURL && cur != helpURL {
 			val = cur
 		}
 		return fireEvent(ShowInputEvent{Message: "Go to", Type: inputNav, Payload: "", Value: val})

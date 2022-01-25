@@ -317,7 +317,7 @@ func (m model) openNewTab(url string, switchTo bool) (model, tea.Cmd) {
 	var cmd tea.Cmd
 	if len(m.tabs) < 9 {
 		m.sequenceID++
-		m.tabs = append(m.tabs, NewTab(m.client, url, m.bookmarks, nil, m.sequenceID))
+		m.tabs = append(m.tabs, NewTab(m.client, url, 0, m.bookmarks, nil, m.sequenceID))
 		if switchTo {
 			cmd = fireEvent(SelectTabEvent{Tab: len(m.tabs) - 1})
 		}
@@ -327,6 +327,7 @@ func (m model) openNewTab(url string, switchTo bool) (model, tea.Cmd) {
 
 type LoadURLEvent struct {
 	URL        string
+	ScrollPos int
 	AddHistory bool
 }
 
@@ -355,7 +356,9 @@ func (m model) saveHistory(path string) error {
 	}
 	defer f.Close()
 	for i := range m.tabs {
-		if err := m.tabs[i].history.ToJSON(f); err != nil {
+		tab := &m.tabs[i]
+		tab.history.UpdateScroll(tab.viewport.viewport.YOffset)
+		if err := tab.history.ToJSON(f); err != nil {
 			return fmt.Errorf("could not write history: %w", err)
 		}
 	}
@@ -368,7 +371,7 @@ func loadTabs(historyPath string, client *gemini.Client, bs *bookmark.Store, sta
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []Tab{
-				NewTab(client, startURL, bs, nil, seqID),
+				NewTab(client, startURL, 0, bs, nil, seqID),
 			}, seqID + 1, nil
 		}
 		return nil, 0, fmt.Errorf("could not load history file: %w", err)
@@ -377,15 +380,19 @@ func loadTabs(historyPath string, client *gemini.Client, bs *bookmark.Store, sta
 
 	hs, err := history.FromJSON(f)
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not decode history: %w", err)
+		log.Printf("Incompatible history file. Ignoring it.")
+		return []Tab{
+			NewTab(client, startURL, 0, bs, nil, seqID),
+		}, seqID + 1, nil
 	}
 	var tabs []Tab
 	for _, h := range hs {
 		u := startURL
+		scrollPos := 0
 		if u == "" {
-			u = h.Current()
+			u, scrollPos = h.Current()
 		}
-		tab := NewTab(client, u, bs, h, seqID)
+		tab := NewTab(client, u, scrollPos, bs, h, seqID)
 		tabs = append(tabs, tab)
 		seqID++
 	}

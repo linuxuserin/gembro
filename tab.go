@@ -57,7 +57,7 @@ type Tab struct {
 	specialPages map[string]func(Tab) string
 }
 
-func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store, h *history.History, id tabID) Tab {
+func NewTab(client *gemini.Client, startURL string, scrollPos int, bs *bookmark.Store, h *history.History, id tabID) Tab {
 	ti := textinput.NewModel()
 	ti.Placeholder = ""
 	ti.CharLimit = 255
@@ -71,7 +71,7 @@ func NewTab(client *gemini.Client, startURL string, bs *bookmark.Store, h *histo
 		client:    client,
 		history:   h,
 		input:     NewInput(),
-		viewport:  NewViewport(startURL, h),
+		viewport:  NewViewport(startURL, scrollPos, h),
 		message:   Message{},
 		bookmarks: bs,
 		specialPages: map[string]func(Tab) string{
@@ -119,7 +119,7 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			}
 		case messageForceCert:
 			if msg.Response {
-				return tab.loadURL(msg.Payload, true, 1, true)
+				return tab.loadURL(msg.Payload, 0, true, 1, true)
 			}
 		}
 	case ShowMessageEvent:
@@ -131,9 +131,9 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		switch msg.Type {
 		case inputQuery:
 			url := fmt.Sprintf("%s?%s", msg.Payload, neturl.QueryEscape(msg.Value))
-			return tab.loadURL(url, true, 1, false)
+			return tab.loadURL(url, 0, true, 1, false)
 		case inputNav:
-			return tab.loadURL(msg.Value, true, 1, false)
+			return tab.loadURL(msg.Value, 0, true, 1, false)
 		case inputBookmark:
 			if err := tab.bookmarks.Add(msg.Payload, msg.Value); err != nil {
 				log.Print(err)
@@ -146,14 +146,14 @@ func (tab Tab) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	case ShowInputEvent:
 		return tab.showInput(msg.Message, msg.Value, msg.Payload, msg.Type)
 	case LoadURLEvent:
-		return tab.loadURL(msg.URL, msg.AddHistory, 1, false)
+		return tab.loadURL(msg.URL, msg.ScrollPos, msg.AddHistory, 1, false)
 	case GoBackEvent:
-		if url, ok := tab.history.Back(); ok {
-			return tab.loadURL(url, false, 1, false)
+		if url, pos, ok := tab.history.Back(); ok {
+			return tab.loadURL(url, pos, false, 1, false)
 		}
 	case GoForwardEvent:
-		if url, ok := tab.history.Forward(); ok {
-			return tab.loadURL(url, false, 1, false)
+		if url, pos, ok := tab.history.Forward(); ok {
+			return tab.loadURL(url, pos, false, 1, false)
 		}
 	case ToggleBookmarkEvent:
 		if tab.bookmarks.Contains(msg.URL) {
@@ -285,8 +285,9 @@ type ServerResponse interface {
 
 type GeminiResponse struct {
 	*gemini.Response
-	level int
-	tab   tabID
+	level     int
+	scrollPos int
+	tab       tabID
 }
 
 func (gr GeminiResponse) Tab() tabID {
@@ -334,7 +335,7 @@ func (tab Tab) handleResponse(resp ServerResponse) (Tab, tea.Cmd) {
 			if resp.level > 5 {
 				return tab.showMessage("Too many redirects. Welcome to the Web from Hell.", "", messagePlain, false)
 			}
-			return tab.loadURL(resp.Header.Meta, true, resp.level+1, false)
+			return tab.loadURL(resp.Header.Meta, resp.scrollPos, true, resp.level+1, false)
 		case 4, 5, 6:
 			return tab.showMessage(fmt.Sprintf("Error: %s", resp.Header.Meta), "", messagePlain, false)
 		case 2:
@@ -344,7 +345,7 @@ func (tab Tab) handleResponse(resp ServerResponse) (Tab, tea.Cmd) {
 				return tab, nil
 			}
 			tab.lastResponse = resp
-			tab.viewport = tab.viewport.SetGeminiContent(body, resp.URL, resp.Header.Meta)
+			tab.viewport = tab.viewport.SetGeminiContent(body, resp.URL, resp.Header.Meta, resp.scrollPos)
 			return tab, nil
 		default:
 			log.Print(resp.Header)
@@ -354,7 +355,7 @@ func (tab Tab) handleResponse(resp ServerResponse) (Tab, tea.Cmd) {
 	return tab, nil
 }
 
-func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Tab, tea.Cmd) {
+func (tab Tab) loadURL(url string, scrollPos int, addHist bool, level int, skipVerify bool) (Tab, tea.Cmd) {
 	if !strings.Contains(url, "://") {
 		url = fmt.Sprintf("gemini://%s", url)
 	}
@@ -371,6 +372,7 @@ func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Ta
 	tab.viewport.loading = true
 
 	cmd := func() tea.Msg {
+		tab.history.UpdateScroll(tab.viewport.viewport.YOffset)
 		defer cancel()
 
 		if isSpecial {
@@ -406,7 +408,7 @@ func (tab Tab) loadURL(url string, addHist bool, level int, skipVerify bool) (Ta
 			if addHist && resp.Header.Status == 2 {
 				tab.history.Add(u.String())
 			}
-			return GeminiResponse{Response: resp, level: level, tab: tab.id}
+			return GeminiResponse{Response: resp, level: level, tab: tab.id, scrollPos: scrollPos}
 		}
 	}
 	return tab, tea.Batch(cmd, spinner.Tick)
